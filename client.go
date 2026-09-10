@@ -69,11 +69,10 @@ func newClient(cfg Config) *Client {
 }
 
 func (c *Client) FetchSnapshot(ctx context.Context) (Snapshot, error) {
-	entries, err := c.fetchAuthFiles(ctx)
+	entries, currentVersion, err := c.fetchAuthFiles(ctx)
 	if err != nil {
 		return Snapshot{}, err
 	}
-
 	tasks := make([]queryTask, 0, len(entries))
 	for _, entry := range entries {
 		provider, ok := classifyProvider(entry)
@@ -84,12 +83,12 @@ func (c *Client) FetchSnapshot(ctx context.Context) (Snapshot, error) {
 
 	accounts := make([]AccountQuota, len(tasks))
 	sem := make(chan struct{}, 8)
-	var wg sync.WaitGroup
+	var accountWG sync.WaitGroup
 	for i := range tasks {
 		i := i
-		wg.Add(1)
+		accountWG.Add(1)
 		go func() {
-			defer wg.Done()
+			defer accountWG.Done()
 			select {
 			case sem <- struct{}{}:
 				defer func() { <-sem }()
@@ -100,7 +99,7 @@ func (c *Client) FetchSnapshot(ctx context.Context) (Snapshot, error) {
 			accounts[i] = c.queryAccount(ctx, tasks[i])
 		}()
 	}
-	wg.Wait()
+	accountWG.Wait()
 
 	groups := make([]ProviderQuota, 0, 3)
 	for _, provider := range []Provider{ProviderCodex, ProviderAntigravity, ProviderClaude} {
@@ -127,38 +126,38 @@ func (c *Client) FetchSnapshot(ctx context.Context) (Snapshot, error) {
 		groups = append(groups, group)
 	}
 
-	return Snapshot{Groups: groups, FetchedAt: time.Now()}, nil
+	return Snapshot{Groups: groups, FetchedAt: time.Now(), CurrentVersion: currentVersion}, nil
 }
 
-func (c *Client) fetchAuthFiles(ctx context.Context) ([]authEntry, error) {
+func (c *Client) fetchAuthFiles(ctx context.Context) ([]authEntry, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint(authFilesPath), nil)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	c.applyManagementAuth(req)
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("GET %s: %w", authFilesPath, err)
+		return nil, "", fmt.Errorf("GET %s: %w", authFilesPath, err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", authFilesPath, err)
+		return nil, "", fmt.Errorf("read %s: %w", authFilesPath, err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("GET %s: HTTP %d: %s", authFilesPath, resp.StatusCode, compactError(raw))
+		return nil, "", fmt.Errorf("GET %s: HTTP %d: %s", authFilesPath, resp.StatusCode, compactError(raw))
 	}
 	var payload struct {
 		Files []map[string]any `json:"files"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", authFilesPath, err)
+		return nil, "", fmt.Errorf("decode %s: %w", authFilesPath, err)
 	}
 	entries := make([]authEntry, len(payload.Files))
 	for i, file := range payload.Files {
 		entries[i] = authEntry{raw: file}
 	}
-	return entries, nil
+	return entries, resp.Header.Get("X-Cpa-Version"), nil
 }
 
 func (c *Client) callUpstream(ctx context.Context, call apiCallRequest) (map[string]any, error) {

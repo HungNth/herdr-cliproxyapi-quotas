@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -48,7 +49,7 @@ func TestInstallShortcutCmdSSHRefusal(t *testing.T) {
 func TestInstallShortcutCmdEndToEnd(t *testing.T) {
 	configFile := filepath.Join(t.TempDir(), "config.toml")
 	t.Setenv("HERDR_CONFIG_PATH", configFile)
-	t.Setenv("HERDR_BIN_PATH", "/usr/bin/true")
+	t.Setenv("HERDR_BIN_PATH", stubHerdrPath(t))
 	if err := os.WriteFile(configFile, []byte("[keys]\nprefix = \"ctrl+b\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -65,6 +66,15 @@ func TestInstallShortcutCmdEndToEnd(t *testing.T) {
 	if err := installShortcutCmd(); err != nil {
 		t.Fatalf("second install should be idempotent, got %v", err)
 	}
+}
+
+// stubHerdrPath returns a platform-appropriate no-op executable for herdr CLI stubbing.
+func stubHerdrPath(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		return filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe")
+	}
+	return "/usr/bin/true"
 }
 
 func TestResetCountdown(t *testing.T) {

@@ -2,7 +2,7 @@ id = "herdr-cliproxyapi-quota-plugin"
 name = "Herdr CliProxyApi Quota Plugin"
 version = "0.1.0"
 min_herdr_version = "0.9.0"
-description = "View CLIProxyAPI account quotas in a Herdr popup."
+description = "View CLIProxyAPI account quotas and version status in a Herdr Tab."
 platforms = ["linux", "macos", "windows"]
 
 [[build]]
@@ -26,7 +26,5 @@ command = ["bin/cpa-quota", "install-shortcut"]
 [[panes]]
 id = "quota"
 title = "CPA Quota"
-placement = "popup"
-width = "90%"
-height = "80%"
+placement = "overlay"
 command = ["bin/cpa-quota"]

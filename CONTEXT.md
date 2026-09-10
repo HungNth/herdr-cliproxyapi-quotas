@@ -39,3 +39,19 @@ _Avoid_: Usage report, cache
 **Shortcut Binding**:
 A user-owned Herdr keybinding that opens CPA Quota through its plugin action.
 _Avoid_: Plugin shortcut, auto-keybinding
+
+**Herdr Tab**:
+A Herdr-managed layout within a workspace that owns its own pane tree.
+_Avoid_: Terminal tab, browser tab
+
+**CPA Version**:
+The release identifier of CLIProxyAPI running at a CPA Endpoint.
+_Avoid_: Plugin version, Herdr version
+
+**Update Availability**:
+The result of comparing a CPA Endpoint's CPA Version with the latest stable CLIProxyAPI release.
+_Avoid_: Quota status, plugin update
+
+**Quota View**:
+A tab-local Herdr pane that presents CPA Quota while allowing navigation to other Herdr Tabs.
+_Avoid_: Popup, session modal

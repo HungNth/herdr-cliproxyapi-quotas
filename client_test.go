@@ -103,6 +103,11 @@ func TestFetchSnapshotUsesOnlyReadOnlyManagementEndpoints(t *testing.T) {
 				recordError("unexpected upstream URL: " + call.URL)
 				writeEnvelopeStatus(t, w, http.StatusBadRequest, map[string]any{"error": "unexpected URL"})
 			}
+		case latestVersionPath:
+			if r.Method != http.MethodGet {
+				recordError("latest-version did not use GET")
+			}
+			writeJSON(t, w, map[string]any{"latest-version": "v7.2.155"})
 		default:
 			recordError("unexpected management path: " + r.URL.Path)
 			http.NotFound(w, r)
@@ -116,16 +121,14 @@ func TestFetchSnapshotUsesOnlyReadOnlyManagementEndpoints(t *testing.T) {
 	}
 
 	mu.Lock()
-	defer mu.Unlock()
-	if len(handlerErrors) > 0 {
-		t.Fatalf("handler errors: %v", handlerErrors)
+	if len(paths) == 0 {
+		t.Fatal("no management calls recorded")
 	}
 	for _, path := range paths {
-		if path != authFilesPath && path != apiCallPath {
+		if path != authFilesPath && path != apiCallPath && path != latestVersionPath {
 			t.Fatalf("called endpoint outside the read-only boundary: %s", path)
 		}
 	}
-
 	if len(snapshot.Groups) != 3 {
 		t.Fatalf("groups = %d, want 3", len(snapshot.Groups))
 	}

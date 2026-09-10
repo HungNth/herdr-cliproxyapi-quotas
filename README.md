@@ -1,6 +1,6 @@
 # Cli Proxy API Quotas
 
-A Go terminal plugin that shows CLIProxyAPI quotas and CLIProxyAPI version status in a tab-local Herdr Quota View.
+A Herdr plugin for viewing CLIProxyAPI account quotas directly in your terminal written in Go. Refreshes automatically and can be opened in a split pane beside your work. It is read-only and does not consume any quota or reset credits.
 
 ## Data boundary
 

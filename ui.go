@@ -24,8 +24,15 @@ const (
 )
 
 type snapshotMsg struct {
+	seq      int
 	snapshot Snapshot
 	err      error
+}
+
+type versionMsg struct {
+	seq    int
+	latest string
+	err    error
 }
 
 type configuredMsg struct {
@@ -40,6 +47,7 @@ type uiModel struct {
 	hasConfig  bool
 	mode       uiMode
 
+
 	baseInput textinput.Model
 	keyInput  textinput.Model
 	focused   int
@@ -49,8 +57,14 @@ type uiModel struct {
 	fetching bool
 	saving   bool
 	errText  string
-	width    int
-	height   int
+
+	refreshSeq      int
+	versionChecking bool
+	latestVersion   string
+	latestErr       string
+
+	width  int
+	height int
 }
 
 var (
@@ -95,6 +109,7 @@ func newUIModel(path string) uiModel {
 		keyInput:   keyInput,
 		viewport:   viewport.New(0, 0),
 		fetching:   hasConfig,
+		refreshSeq: seqForInitialFetch(hasConfig),
 	}
 	if !hasConfig {
 		model.mode = modeConfig
@@ -108,9 +123,16 @@ func newUIModel(path string) uiModel {
 
 func (m uiModel) Init() tea.Cmd {
 	if m.hasConfig {
-		return tea.Batch(fetchSnapshotCmd(m.config), countdownTick())
+		return tea.Batch(fetchSnapshotCmd(m.config, m.refreshSeq), fetchVersionCmd(m.config, m.refreshSeq), countdownTick())
 	}
 	return countdownTick()
+}
+
+func seqForInitialFetch(hasConfig bool) int {
+	if hasConfig {
+		return 1
+	}
+	return 0
 }
 
 func countdownTick() tea.Cmd {
@@ -130,6 +152,9 @@ func (m uiModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.resize()
 		return m, nil
 	case snapshotMsg:
+		if message.seq != 0 && message.seq != m.refreshSeq {
+			return m, nil
+		}
 		m.fetching = false
 		if message.err != nil {
 			m.errText = message.err.Error()
@@ -138,6 +163,18 @@ func (m uiModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.errText = ""
 		m.snapshot = message.snapshot
 		m.refreshViewport()
+		return m, nil
+	case versionMsg:
+		if message.seq != 0 && message.seq != m.refreshSeq {
+			return m, nil
+		}
+		m.versionChecking = false
+		if message.err != nil {
+			m.latestErr = message.err.Error()
+			return m, nil
+		}
+		m.latestErr = ""
+		m.latestVersion = message.latest
 		return m, nil
 	case configuredMsg:
 		m.saving = false
@@ -149,9 +186,11 @@ func (m uiModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.hasConfig = true
 		m.snapshot = message.snapshot
 		m.errText = ""
+		m.latestVersion = ""
+		m.latestErr = ""
 		m.mode = modeQuota
 		m.refreshViewport()
-		return m, nil
+		return m, tea.Batch(fetchVersionCmd(m.config, m.nextSeq()))
 	case tea.KeyMsg:
 		if m.mode == modeConfig {
 			return m.updateConfig(message)
@@ -176,8 +215,9 @@ func (m uiModel) updateQuota(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.fetching = true
+		m.versionChecking = true
 		m.errText = ""
-		return m, fetchSnapshotCmd(m.config)
+		return m, tea.Batch(fetchSnapshotCmd(m.config, m.nextSeq()), fetchVersionCmd(m.config, m.nextSeq()))
 	case "c", "C":
 		if m.fetching {
 			return m, nil
@@ -289,7 +329,8 @@ func (m uiModel) View() string {
 	case !m.snapshot.FetchedAt.IsZero():
 		status = dimStyle.Render("Updated " + m.snapshot.FetchedAt.Local().Format("02/01 15:04:05"))
 	}
-	header := titleStyle.Render("CPA Quota")
+	versionLine := versionStatusLine(m, m.versionChecking)
+	header := titleStyle.Render("CPA Quota") + "\n" + versionLine
 	if status != "" {
 		header += "  " + status
 	}
@@ -322,12 +363,60 @@ func (m uiModel) configView() string {
 	return borderStyle.Width(width).Render(strings.Join(content, "\n"))
 }
 
-func fetchSnapshotCmd(cfg Config) tea.Cmd {
+func versionStatusLine(model uiModel, checking bool) string {
+	current := strings.TrimSpace(model.snapshot.CurrentVersion)
+	latest := strings.TrimSpace(model.latestVersion)
+	latestFailed := strings.TrimSpace(model.latestErr) != ""
+
+	switch {
+	case checking && current == "":
+		return dimStyle.Render("CPA version · checking latest…")
+	case checking:
+		return dimStyle.Render("CPA " + current + " · checking latest…")
+	case current == "" && latest != "":
+		return dimStyle.Render("CPA version unknown · latest " + latest)
+	case current == "":
+		return dimStyle.Render("CPA version unknown")
+	case latestFailed && latest == "":
+		return dimStyle.Render("CPA " + current + " · latest check unavailable")
+	case latest == "":
+		return dimStyle.Render("CPA " + current)
+	}
+
+	comparison, ok := compareVersions(current, latest)
+	if !ok {
+		return dimStyle.Render("CPA " + current + " · latest " + latest)
+	}
+	switch comparison {
+	case 0:
+		return dimStyle.Render("CPA " + current)
+	case -1:
+		return warningStyle.Render("CPA " + current + " → " + latest + " available")
+	default:
+		return dimStyle.Render("CPA " + current + " · ahead of latest " + latest)
+	}
+}
+
+func (m *uiModel) nextSeq() int {
+	m.refreshSeq++
+	return m.refreshSeq
+}
+
+func fetchSnapshotCmd(cfg Config, seq int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
 		snapshot, err := newClient(cfg).FetchSnapshot(ctx)
-		return snapshotMsg{snapshot: snapshot, err: err}
+		return snapshotMsg{seq: seq, snapshot: snapshot, err: err}
+	}
+}
+
+func fetchVersionCmd(cfg Config, seq int) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+		latest, err := newClient(cfg).fetchLatestVersion(ctx)
+		return versionMsg{seq: seq, latest: latest, err: err}
 	}
 }
 

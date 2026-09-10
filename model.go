@@ -44,6 +44,9 @@ type ProviderQuota struct {
 }
 
 type Snapshot struct {
-	Groups    []ProviderQuota
-	FetchedAt time.Time
+	Groups         []ProviderQuota
+	FetchedAt      time.Time
+	CurrentVersion string
+	LatestVersion  string
+	LatestError    string
 }

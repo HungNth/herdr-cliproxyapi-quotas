@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"cpa-quota/internal/cpa"
-	"github.com/rivo/uniseg"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -10,6 +10,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/rivo/uniseg"
+
+	"cpa-quota/internal/cpa"
 )
 
 func TestVersionStatusLineUpdateAvailable(t *testing.T) {
@@ -584,7 +587,14 @@ func TestSubmitConfigSetsErrorOnInvalidInput(t *testing.T) {
 
 func autoRefreshModel(t *testing.T) uiModel {
 	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"latest-version":"v7.2.155"}`))
+	}))
+	t.Cleanup(server.Close)
+
 	model := newUIModel(configPathForTest(t))
+	model.config.BaseURL = server.URL
 	model.mode = modeQuota
 	model.hasConfig = true
 	model.refreshSeq = 5
@@ -687,8 +697,11 @@ func TestTickWhileFetchingIsDropped(t *testing.T) {
 
 	updated, _ := model.Update(tickMsg(fixedTime()))
 	after := updated.(uiModel)
-	if !after.fetching || after.refreshSeq != 9 || !after.lastFetchAt.Equal(overdue) {
-		t.Fatal("in-flight tick must be dropped without state change")
+	if !after.fetching || after.refreshSeq != 9 {
+		t.Fatal("in-flight tick must not issue a new fetch or change fetching state")
+	}
+	if !after.lastFetchAt.Equal(fixedTime()) {
+		t.Fatalf("dropped in-flight tick must restart countdown from tick time: got %v, want %v", after.lastFetchAt, fixedTime())
 	}
 }
 

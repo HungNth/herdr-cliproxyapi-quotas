@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -25,8 +26,6 @@ const (
 	modeQuota uiMode = iota
 	modeConfig
 )
-
-const defaultRefreshInterval = 60 * time.Second
 
 type snapshotMsg struct {
 	seq      int
@@ -156,10 +155,19 @@ func seqForInitialFetch(hasConfig bool) int {
 }
 
 func (m uiModel) autoRefreshDue(now time.Time) bool {
-	if m.mode != modeQuota || !m.hasConfig || m.fetching || m.lastFetchAt.IsZero() {
+	if m.mode != modeQuota || !m.hasConfig || m.fetching || m.versionChecking || m.lastFetchAt.IsZero() {
 		return false
 	}
 	return now.Sub(m.lastFetchAt) >= m.refreshInterval
+}
+
+func (m uiModel) startFetch(now time.Time) (uiModel, tea.Cmd, tea.Cmd) {
+	m.fetching = true
+	m.versionChecking = true
+	m.errText = ""
+	m.lastFetchAt = now
+	seq := m.nextSeq()
+	return m, fetchSnapshotCmd(m.config, seq), fetchVersionCmd(m.config, seq)
 }
 
 // refreshTick schedules the next wake-up: the sooner of the remaining Refresh Interval
@@ -185,13 +193,12 @@ func (m uiModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == modeQuota && !m.snapshot.FetchedAt.IsZero() {
 			m.refreshViewport()
 		}
-		if m.autoRefreshDue(now) {
-			m.fetching = true
-			m.versionChecking = true
-			m.errText = ""
+		if (m.fetching || m.versionChecking) && !m.lastFetchAt.IsZero() && now.Sub(m.lastFetchAt) >= m.refreshInterval {
 			m.lastFetchAt = now
-			seq := m.nextSeq()
-			return m, tea.Batch(fetchSnapshotCmd(m.config, seq), fetchVersionCmd(m.config, seq), refreshTick(m))
+		}
+		if m.autoRefreshDue(now) {
+			updated, snapCmd, verCmd := m.startFetch(now)
+			return updated, tea.Batch(snapCmd, verCmd, refreshTick(updated))
 		}
 		return m, refreshTick(m)
 	case tea.WindowSizeMsg:
@@ -242,7 +249,7 @@ func (m uiModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = modeQuota
 		m.lastFetchAt = time.Now()
 		m.refreshViewport()
-		return m, tea.Batch(fetchVersionCmd(m.config, m.nextSeq()))
+		return m, tea.Batch(fetchVersionCmd(m.config, m.nextSeq()), refreshTick(m))
 	case tea.KeyMsg:
 		if m.mode == modeConfig {
 			return m.updateConfig(message)
@@ -263,17 +270,13 @@ func (m uiModel) updateQuota(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "esc":
 		return m, tea.Quit
 	case "r", "R":
-		if m.fetching {
+		if m.fetching || m.versionChecking {
 			return m, nil
 		}
-		m.fetching = true
-		m.versionChecking = true
-		m.errText = ""
-		m.lastFetchAt = time.Now()
-		seq := m.nextSeq()
-		return m, tea.Batch(fetchSnapshotCmd(m.config, seq), fetchVersionCmd(m.config, seq))
+		updated, snapCmd, verCmd := m.startFetch(time.Now())
+		return updated, tea.Batch(snapCmd, verCmd)
 	case "c", "C":
-		if m.fetching {
+		if m.fetching || m.versionChecking {
 			return m, nil
 		}
 		m.mode = modeConfig
@@ -384,6 +387,7 @@ func (m *uiModel) resize() {
 	m.baseInput.Width = max(10, width-2)
 	m.keyInput.Width = max(10, width-2)
 	m.intervalInput.Width = max(10, width-2)
+	m.viewport.Width = max(1, m.width)
 	m.viewport.Height = max(1, m.height-4)
 	m.refreshViewport()
 }
@@ -409,7 +413,7 @@ func (m uiModel) View() string {
 		status = dimStyle.Render("Updated " + m.snapshot.FetchedAt.Local().Format("02/01 15:04:05"))
 	}
 	versionLine := versionStatusLine(m, m.versionChecking)
-	header := titleStyle.Render("CPA Quota") + "\n" + versionLine
+	header := titleStyle.Render("CPA Quotas") + "\n" + versionLine
 	if status != "" {
 		header += "  " + status
 	}
@@ -431,7 +435,7 @@ func (m uiModel) View() string {
 func (m uiModel) configView() string {
 	width := max(24, m.width-4)
 	content := []string{
-		titleStyle.Render("Configure CPA Quota"),
+		titleStyle.Render("Configure CPA Quotas Plugin"),
 		"",
 		configLabelStyle.Render("CLIProxyAPI Base URL"),
 		m.baseInput.View(),

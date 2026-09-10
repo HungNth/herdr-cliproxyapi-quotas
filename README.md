@@ -1,16 +1,13 @@
-# Cli Proxy API Quotas
+# Herdr CLI Proxy API Quotas Plugin
 
 A Herdr plugin for viewing CLIProxyAPI account quotas directly in your terminal written in Go. Refreshes automatically and can be opened in a split pane beside your work. It is read-only and does not consume any quota or reset credits.
 
-## Data boundary
+## Quick start
 
-The plugin only calls these CLIProxyAPI Management API endpoints:
+- Open a Herdr terminal and press `prefix+u` to open the CLIProxyAPI Quota View.
 
-- `GET /v0/management/auth-files`
-- `GET /v0/management/latest-version`
-- `POST /v0/management/api-call`
-
-All provider quota lookups are read-only requests forwarded through `api-call`. The plugin does not read local token files, call providers directly, consume Codex reset credits, reset CLIProxyAPI quota state, modify accounts, or update CLIProxyAPI.
+![screenshot](images/herdr-cliproxyapi-quotas.webp)
+![screenshot-configure](images/herdr-cliproxyapi-quotas-config.webp)
 
 ## Requirements
 
@@ -46,7 +43,7 @@ Windows:          %APPDATA%\herdr\config.toml
 key = "prefix+u"
 type = "plugin_action"
 command = "herdr-cliproxyapi-quotas.open"
-description = "open CPA quota"
+description = "open CPA quotas"
 ```
 
 **Step 3**: Reload Herdr configuration:
@@ -72,6 +69,16 @@ herdr plugin link .
 go build -o bin/cpa-quotas.exe ./cmd/cpa-quotas
 herdr plugin link .
 ```
+
+## Data boundary
+
+The plugin only calls these CLIProxyAPI Management API endpoints:
+
+- `GET /v0/management/auth-files`
+- `GET /v0/management/latest-version`
+- `POST /v0/management/api-call`
+
+All provider quota lookups are read-only requests forwarded through `api-call`. The plugin does not read local token files, call providers directly, consume Codex reset credits, reset CLIProxyAPI quota state, modify accounts, or update CLIProxyAPI.
 
 ## Quota View behavior
 

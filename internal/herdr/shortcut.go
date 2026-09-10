@@ -115,7 +115,7 @@ func applyShortcutInstall(content string) (string, shortcutStatus, error) {
 		`key = "prefix+u"`,
 		`type = "plugin_action"`,
 		fmt.Sprintf(`command = %q`, pluginActionCommand),
-		`description = "open CPA quota"`,
+		`description = "open CPA quotas"`,
 	}, "\n") + "\n"
 
 	if len(content) > 0 && !strings.HasSuffix(content, "\n") {

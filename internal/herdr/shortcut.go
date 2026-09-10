@@ -1,10 +1,12 @@
 package herdr
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"cpa-quota/internal/config"
@@ -24,7 +26,20 @@ func herdrConfigPath() (string, error) {
 	if path := strings.TrimSpace(os.Getenv("HERDR_CONFIG_PATH")); path != "" {
 		return path, nil
 	}
-	dir, err := os.UserConfigDir()
+
+	var dir string
+	var err error
+	if runtime.GOOS == "windows" {
+		dir, err = os.UserConfigDir()
+	} else {
+		dir = strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME"))
+		if dir == "" {
+			dir, err = os.UserHomeDir()
+			if err == nil {
+				dir = filepath.Join(dir, ".config")
+			}
+		}
+	}
 	if err != nil {
 		return "", fmt.Errorf("resolve Herdr config directory: %w", err)
 	}
@@ -42,7 +57,8 @@ func InstallShortcutCmd() error {
 		return err
 	}
 	raw, err := os.ReadFile(path)
-	if err != nil {
+	existed := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
 	updated, status, err := applyShortcutInstall(string(raw))
@@ -53,6 +69,9 @@ func InstallShortcutCmd() error {
 		fmt.Printf("Shortcut prefix+u already installed in %s\n", path)
 		return nil
 	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create Herdr config directory: %w", err)
+	}
 	if err := os.WriteFile(path, []byte(updated), 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
@@ -61,7 +80,11 @@ func InstallShortcutCmd() error {
 		herdr = "herdr"
 	}
 	if out, checkErr := exec.Command(herdr, "config", "check").CombinedOutput(); checkErr != nil {
-		_ = os.WriteFile(path, raw, 0o600)
+		if existed {
+			_ = os.WriteFile(path, raw, 0o600)
+		} else {
+			_ = os.Remove(path)
+		}
 		return fmt.Errorf("herdr config check failed (%v), restored previous config: %s", checkErr, compactError(out))
 	}
 	fmt.Printf("Added prefix+u shortcut to %s\n", path)

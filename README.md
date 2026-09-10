@@ -1,6 +1,6 @@
-# CPA Quota
+# Cli Proxy API Quotas
 
-A Go terminal plugin that shows CLIProxyAPI quotas and CPA version status in a tab-local Herdr Quota View.
+A Go terminal plugin that shows CLIProxyAPI quotas and CLIProxyAPI version status in a tab-local Herdr Quota View.
 
 ## Data boundary
 
@@ -10,34 +10,28 @@ The plugin only calls these CLIProxyAPI Management API endpoints:
 - `GET /v0/management/latest-version`
 - `POST /v0/management/api-call`
 
-All provider quota lookups are read-only requests forwarded through `api-call`. The plugin does not read local token files, call providers directly, consume Codex reset credits, reset CPA quota state, modify accounts, or update CLIProxyAPI.
+All provider quota lookups are read-only requests forwarded through `api-call`. The plugin does not read local token files, call providers directly, consume Codex reset credits, reset CLIProxyAPI quota state, modify accounts, or update CLIProxyAPI.
+
+## Requirements
+
+- Herdr 0.9.0 or newer
+- Go 1.26 or newer
 
 ## Install
 
-Go 1.26 or newer is required because Herdr builds the plugin during installation.
-
-For local development:
-
-- MacOS/Linux:
+**Step 1**: Install the plugin from GitHub:
 
 ```bash
-go build -o bin/cpa-quotas ./cmd/cpa-quotas
-herdr plugin link .
+herdr plugin install HungNth/herdr-cliproxyapi-quotas
 ```
 
-- Windows:
-
-```powershell
-go build -o bin/cpa-quotas.exe ./cmd/cpa-quotas
-herdr plugin link .
-```
-
-Automatic keybinding setup: run once from a local (non-SSH) session:
+**Step 2**: Add a keybinding to your Herdr `config.toml` to open the Quota View.
 
 ```bash
 herdr plugin action invoke herdr-cliproxyapi-quotas.shortcut
 ```
 
+**Note:**
 This appends `prefix+u` to your Herdr `config.toml` unless that key is already bound to a different command. It refuses to run over SSH and never overwrites an existing binding. Remote clients with local keybindings must add the binding manually.
 
 Herdr reads config from:
@@ -55,13 +49,29 @@ command = "herdr-cliproxyapi-quotas.open"
 description = "open CPA quota"
 ```
 
-Reload Herdr configuration:
+**Step 3**: Reload Herdr configuration:
 
 ```bash
 herdr server reload-config
 ```
 
-The first view asks for the CLIProxyAPI base URL and management key. Configuration is stored in Herdr's plugin config directory; manual JSON editing is not required.
+**Note**: The first view asks for the CLIProxyAPI base URL and management key. Configuration is stored in Herdr's plugin config directory; manual JSON editing is not required.
+
+### For local development:
+
+- MacOS/Linux:
+
+```bash
+go build -o bin/cpa-quotas ./cmd/cpa-quotas
+herdr plugin link .
+```
+
+- Windows:
+
+```powershell
+go build -o bin/cpa-quotas.exe ./cmd/cpa-quotas
+herdr plugin link .
+```
 
 ## Quota View behavior
 

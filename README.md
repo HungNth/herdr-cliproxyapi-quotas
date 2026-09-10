@@ -75,10 +75,10 @@ The first view asks for the CLIProxyAPI base URL and management key. Configurati
 
 ## Quota View behavior
 
-- `prefix+u` opens the Quota View as an overlay in the current Herdr Tab. You can switch to another Herdr Tab and keep working; the view, its snapshot, scroll position, and reset countdowns stay alive. Press the shortcut again to focus it, or switch back to that tab.
-- Each Herdr Tab owns at most one Quota View. A Herdr Tab opened from another tab gets its own view. If a view was closed or removed, the next invocation opens a new one automatically.
-- The version line under the title compares the running CLIProxyAPI release (the `x-cpa-version` response header) against the latest stable release (`/v0/management/latest-version`): current, checking latest, update available, ahead of latest, version unknown, or latest check unavailable. A version check failure never affects quota data.
-- Because Herdr overlays attach to the active pane at open time, open the view from the tab you are currently in; the shortcut runs while Herdr is waiting for the action, so this is the normal case.
+- `prefix+u` opens the Quota View as a right-hand split (50/50) beside your active pane. Your work pane remains live so you can type, edit, and create further right or down splits without the quota view covering them.
+- Focus policy: a configured Quota View opens without stealing focus (`--no-focus`), allowing you to continue typing. On first use (when credentials need to be entered), it receives focus automatically.
+- Toggle & dedup: each Herdr Tab owns at most one Quota View. Pressing `prefix+u` from a work pane focuses the existing Quota View; pressing `prefix+u` from inside the focused Quota View closes it as a toggle.
+- Resizing and manual rearrangements: the Quota View is a normal Herdr pane; you can drag split dividers, swap panes, or create additional splits around it. If closed manually or via `q`/Escape, the next `prefix+u` reopens a fresh split automatically.
 
 ## Keys
 

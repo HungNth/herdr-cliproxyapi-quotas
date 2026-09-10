@@ -58,8 +58,26 @@ func openQuotaView() error {
 	if err != nil {
 		return err
 	}
+	invokingPane := os.Getenv("HERDR_PANE_ID")
+	if existing := reg.entryFor(tabID); existing != "" {
+		if paneExists(herdr, existing) {
+			if invokingPane != "" && invokingPane == existing {
+				reg = clearStaleEntry(reg, tabID)
+				if err := saveViewRegistry(path, reg); err != nil {
+					return err
+				}
+				return runHerdr(herdr, "plugin", "pane", "close", existing)
+			}
+			return runHerdr(herdr, "plugin", "pane", "focus", existing)
+		}
+		reg = clearStaleEntry(reg, tabID)
+		if err := saveViewRegistry(path, reg); err != nil {
+			return err
+		}
+	}
+
 	configured := hasSavedConfig()
-	out, err := openNewPane(herdr, os.Getenv("HERDR_PANE_ID"), configured)
+	out, err := openNewPane(herdr, invokingPane, configured)
 	if err != nil {
 		return err
 	}

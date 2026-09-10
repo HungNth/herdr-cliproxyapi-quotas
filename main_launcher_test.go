@@ -167,3 +167,106 @@ func TestQuotaPaneRecordedInRegistryAfterOpen(t *testing.T) {
 		t.Fatalf("registry missing tab entry: %s", raw)
 	}
 }
+
+func TestInvokingFromWorkPaneFocusesExistingQuotaView(t *testing.T) {
+	_, tab, invoker := setupLauncher(t, true)
+	reg := viewRegistry{tab: "w1:quota9"}
+	if err := saveViewRegistry(registryFile(t), reg); err != nil {
+		t.Fatal(err)
+	}
+	log := fakeHerdrEnv(t, struct {
+		existingPanes string
+		fail          bool
+	}{existingPanes: "w1:quota9," + invoker})
+
+	if err := openQuotaView(); err != nil {
+		t.Fatalf("openQuotaView() error = %v", err)
+	}
+	calls := readCalls(t, log)
+	foundFocus := false
+	for _, call := range calls {
+		if strings.Contains(call, "plugin pane focus w1:quota9") {
+			foundFocus = true
+		}
+		if strings.Contains(call, "plugin pane open") {
+			t.Fatalf("must not open a new pane when one exists: %s", call)
+		}
+	}
+	if !foundFocus {
+		t.Fatalf("calls missing focus: %v", calls)
+	}
+}
+
+func TestInvokingFromFocusedQuotaViewClosesIt(t *testing.T) {
+	_, tab, _ := setupLauncher(t, true)
+	quotaPane := "w1:quota9"
+	t.Setenv("HERDR_PANE_ID", quotaPane)
+	reg := viewRegistry{tab: quotaPane}
+	if err := saveViewRegistry(registryFile(t), reg); err != nil {
+		t.Fatal(err)
+	}
+	log := fakeHerdrEnv(t, struct {
+		existingPanes string
+		fail          bool
+	}{existingPanes: quotaPane})
+
+	if err := openQuotaView(); err != nil {
+		t.Fatalf("openQuotaView() error = %v", err)
+	}
+	calls := readCalls(t, log)
+	foundClose := false
+	for _, call := range calls {
+		if strings.Contains(call, "plugin pane close "+quotaPane) {
+			foundClose = true
+		}
+		if strings.Contains(call, "plugin pane focus") {
+			t.Fatalf("must not focus self when toggle-closing: %s", call)
+		}
+	}
+	if !foundClose {
+		t.Fatalf("calls missing close toggle: %v", calls)
+	}
+	afterReg, err := loadViewRegistry(registryFile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterReg[tab] != "" {
+		t.Fatalf("closed pane must be removed from registry: %v", afterReg)
+	}
+}
+
+func TestStaleRegistryEntryReopensFreshSplit(t *testing.T) {
+	_, tab, invoker := setupLauncher(t, true)
+	reg := viewRegistry{tab: "w1:deadpane"}
+	if err := saveViewRegistry(registryFile(t), reg); err != nil {
+		t.Fatal(err)
+	}
+	log := fakeHerdrEnv(t, struct {
+		existingPanes string
+		fail          bool
+	}{existingPanes: invoker})
+
+	if err := openQuotaView(); err != nil {
+		t.Fatalf("openQuotaView() error = %v", err)
+	}
+	calls := readCalls(t, log)
+	foundOpen := false
+	for _, call := range calls {
+		if strings.Contains(call, "plugin pane open") {
+			foundOpen = true
+		}
+		if strings.Contains(call, "plugin pane focus w1:deadpane") {
+			t.Fatalf("must not focus stale pane: %s", call)
+		}
+	}
+	if !foundOpen {
+		t.Fatalf("calls: %v | log path: %s", calls, log)
+	}
+	afterReg, err := loadViewRegistry(registryFile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterReg[tab] == "w1:deadpane" || afterReg[tab] == "" {
+		t.Fatalf("registry must hold newly opened pane: %v", afterReg)
+	}
+}

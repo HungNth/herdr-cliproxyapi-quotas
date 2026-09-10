@@ -1,30 +1,30 @@
-id = "herdr-cliproxyapi-quota-plugin"
-name = "Herdr CliProxyApi Quota Plugin"
+id = "herdr-cliproxyapi-quotas"
+name = "Herdr Cli Proxy API Quotas Plugin"
 version = "0.1.0"
 min_herdr_version = "0.9.0"
 description = "View CLIProxyAPI account quotas and version status in a Herdr Tab."
 platforms = ["linux", "macos", "windows"]
 
 [[build]]
-command = ["go", "build", "-trimpath", "-o", "bin/cpa-quota", "."]
+command = ["go", "build", "-trimpath", "-o", "bin/cpa-quotas", "."]
 platforms = ["linux", "macos"]
 
 [[build]]
-command = ["go", "build", "-trimpath", "-o", "bin/cpa-quota.exe", "."]
+command = ["go", "build", "-trimpath", "-o", "bin/cpa-quotas.exe", "."]
 platforms = ["windows"]
 
 [[actions]]
 id = "open"
-title = "Open CPA quota"
-command = ["bin/cpa-quota", "open"]
+title = "Open CPA quotas"
+command = ["bin/cpa-quotas", "open"]
 
 [[actions]]
-id = "install-shortcut"
+id = "shortcut"
 title = "Install prefix+u shortcut"
-command = ["bin/cpa-quota", "install-shortcut"]
+command = ["bin/cpa-quotas", "shortcut"]
 
 [[panes]]
-id = "quota"
-title = "CPA Quota"
+id = "quotas"
+title = "CPA Quotas"
 placement = "split"
-command = ["bin/cpa-quota"]
+command = ["bin/cpa-quotas"]

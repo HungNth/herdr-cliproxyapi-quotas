@@ -3,8 +3,8 @@ package main
 import "time"
 
 const (
-	pluginID       = "herdr-cliproxyapi-quota-plugin"
-	paneEntrypoint = "quota"
+	pluginID       = "herdr-cliproxyapi-quotas"
+	paneEntrypoint = "quotas"
 )
 
 type Config struct {

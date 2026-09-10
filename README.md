@@ -14,38 +14,28 @@ All provider quota lookups are read-only requests forwarded through `api-call`. 
 
 ## Install
 
-Go 1.23 or newer is required because Herdr builds the plugin during installation.
+Go 1.26 or newer is required because Herdr builds the plugin during installation.
 
 For local development:
 
 - MacOS/Linux:
 
 ```bash
-go build -o bin/cpa-quota .
+go build -o bin/cpa-quotas .
 herdr plugin link .
 ```
 
 - Windows:
 
 ```powershell
-go build -o bin/cpa-quota.exe .
+go build -o bin/cpa-quotas.exe .
 herdr plugin link .
 ```
 
-The manifest also declares an `install-shortcut` action, so `herdr plugin action invoke herdr-cliproxyapi-quota-plugin.install-shortcut` runs the same setup as the command below.
-
 Automatic keybinding setup: run once from a local (non-SSH) session:
 
-- MacOS/Linux:
-
 ```bash
-bin/cpa-quota install-shortcut
-```
-
-- Windows
-
-```bash
-.\bin\cpa-quota.exe install-shortcut
+herdr plugin action invoke herdr-cliproxyapi-quotas.shortcut
 ```
 
 This appends `prefix+u` to your Herdr `config.toml` unless that key is already bound to a different command. It refuses to run over SSH and never overwrites an existing binding. Remote clients with local keybindings must add the binding manually.
@@ -61,7 +51,7 @@ Windows:          %APPDATA%\herdr\config.toml
 [[keys.command]]
 key = "prefix+u"
 type = "plugin_action"
-command = "herdr-cliproxyapi-quota-plugin.open"
+command = "herdr-cliproxyapi-quotas.open"
 description = "open CPA quota"
 ```
 

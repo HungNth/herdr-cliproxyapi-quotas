@@ -17,8 +17,17 @@ Go 1.23 or newer is required because Herdr builds the plugin during installation
 
 For local development:
 
-```sh
+- MacOS/Linux:
+
+```bash
 go build -o bin/cpa-quota .
+herdr plugin link .
+```
+
+- Windows:
+
+```powershell
+go build -o bin/cpa-quota.exe .
 herdr plugin link .
 ```
 
@@ -26,11 +35,26 @@ The manifest also declares an `install-shortcut` action, so `herdr plugin action
 
 Automatic keybinding setup: run once from a local (non-SSH) session:
 
-```sh
+- MacOS/Linux:
+
+```bash
 bin/cpa-quota install-shortcut
 ```
 
+- Windows
+
+```bash
+.\bin\cpa-quota.exe install-shortcut
+```
+
 This appends `prefix+u` to your Herdr `config.toml` unless that key is already bound to a different command. It refuses to run over SSH and never overwrites an existing binding. Remote clients with local keybindings must add the binding manually.
+
+Herdr reads config from:
+
+```plaintext
+Linux and macOS: ~/.config/herdr/config.toml
+Windows:          %APPDATA%\herdr\config.toml
+```
 
 ```toml
 [[keys.command]]
@@ -42,7 +66,7 @@ description = "open CPA quota"
 
 Reload Herdr configuration:
 
-```sh
+```bash
 herdr server reload-config
 ```
 

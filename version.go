@@ -13,7 +13,13 @@ import (
 const latestVersionPath = "/v0/management/latest-version"
 
 func parseVersionTriplet(raw string) (major int, minor int, patch int, ok bool) {
-	trimmed := strings.TrimPrefix(strings.TrimPrefix(raw, "v"), "V")
+	trimmed := raw
+	if strings.HasPrefix(raw, "v") || strings.HasPrefix(raw, "V") {
+		trimmed = raw[1:]
+		if strings.HasPrefix(trimmed, "v") || strings.HasPrefix(trimmed, "V") {
+			return 0, 0, 0, false
+		}
+	}
 	parts := strings.Split(trimmed, ".")
 	if len(parts) != 3 {
 		return 0, 0, 0, false

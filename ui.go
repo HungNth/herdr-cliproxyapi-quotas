@@ -109,6 +109,7 @@ func newUIModel(path string) uiModel {
 		keyInput:   keyInput,
 		viewport:   viewport.New(0, 0),
 		fetching:   hasConfig,
+		versionChecking: hasConfig,
 		refreshSeq: seqForInitialFetch(hasConfig),
 	}
 	if !hasConfig {
@@ -171,6 +172,7 @@ func (m uiModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.versionChecking = false
 		if message.err != nil {
 			m.latestErr = message.err.Error()
+			m.latestVersion = ""
 			return m, nil
 		}
 		m.latestErr = ""
@@ -188,6 +190,7 @@ func (m uiModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.errText = ""
 		m.latestVersion = ""
 		m.latestErr = ""
+		m.versionChecking = true
 		m.mode = modeQuota
 		m.refreshViewport()
 		return m, tea.Batch(fetchVersionCmd(m.config, m.nextSeq()))
@@ -217,7 +220,8 @@ func (m uiModel) updateQuota(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.fetching = true
 		m.versionChecking = true
 		m.errText = ""
-		return m, tea.Batch(fetchSnapshotCmd(m.config, m.nextSeq()), fetchVersionCmd(m.config, m.nextSeq()))
+		seq := m.nextSeq()
+		return m, tea.Batch(fetchSnapshotCmd(m.config, seq), fetchVersionCmd(m.config, seq))
 	case "c", "C":
 		if m.fetching {
 			return m, nil
@@ -373,11 +377,13 @@ func versionStatusLine(model uiModel, checking bool) string {
 		return dimStyle.Render("CPA version · checking latest…")
 	case checking:
 		return dimStyle.Render("CPA " + current + " · checking latest…")
+	case current == "" && latestFailed:
+		return dimStyle.Render("CPA version unknown · latest check unavailable")
 	case current == "" && latest != "":
 		return dimStyle.Render("CPA version unknown · latest " + latest)
 	case current == "":
 		return dimStyle.Render("CPA version unknown")
-	case latestFailed && latest == "":
+	case latestFailed:
 		return dimStyle.Render("CPA " + current + " · latest check unavailable")
 	case latest == "":
 		return dimStyle.Render("CPA " + current)

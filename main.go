@@ -13,7 +13,7 @@ import (
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "open" {
-		if err := openPopup(); err != nil {
+		if err := openQuotaView(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -39,7 +39,7 @@ func main() {
 	}
 }
 
-func openPopup() error {
+func openQuotaView() error {
 	herdr := os.Getenv("HERDR_BIN_PATH")
 	if herdr == "" {
 		herdr = "herdr"
@@ -49,6 +49,11 @@ func openPopup() error {
 	if err != nil {
 		return err
 	}
+	release, err := lockRegistry(path)
+	if err != nil {
+		return err
+	}
+	defer release()
 	reg, err := loadViewRegistry(path)
 	if err != nil {
 		return err
@@ -76,6 +81,24 @@ func openPopup() error {
 	}
 	return nil
 }
+
+// lockRegistry serializes registry mutations across concurrent plugin action processes.
+// ponytail: one global lock file per plugin; per-tab locks only if multi-key throughput ever matters
+func lockRegistry(path string) (func(), error) {
+	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open registry lock: %w", err)
+	}
+	if err := lockFile(lock); err != nil {
+		lock.Close()
+		return nil, fmt.Errorf("lock registry: %w", err)
+	}
+	return func() {
+		unlockFile(lock)
+		lock.Close()
+	}, nil
+}
+
 func openNewPane(herdr string) (string, error) {
 	args := []string{"plugin", "pane", "open", "--plugin", pluginID, "--entrypoint", paneEntrypoint}
 	cmd := exec.Command(herdr, args...)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -17,6 +18,8 @@ func TestParseVersionTriplet(t *testing.T) {
 		patch int
 		ok    bool
 	}{
+		{"vV7.2.154", 0, 0, 0, false},
+		{"vv7.2.154", 0, 0, 0, false},
 		{"7.2.154", 7, 2, 154, true},
 		{"v7.2.154", 7, 2, 154, true},
 		{"V7.2.154", 7, 2, 154, true},
@@ -88,7 +91,35 @@ func TestMissingVersionHeaderLeavesCurrentUnknown(t *testing.T) {
 	if snapshot.CurrentVersion != "" {
 		t.Fatalf("CurrentVersion = %q, want empty", snapshot.CurrentVersion)
 	}
-	if snapshot.LatestVersion != "" {
-		t.Fatalf("LatestVersion = %q, want empty (fetched separately)", snapshot.LatestVersion)
-	}
+}
+
+func TestFetchLatestVersionRejectsBadAuthAndBadPayload(t *testing.T) {
+	t.Parallel()
+
+	t.Run("malformed payload", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Authorization") != "Bearer secret" {
+				t.Errorf("missing management authorization")
+			}
+			w.Write([]byte("not json"))
+		}))
+		defer server.Close()
+
+		_, err := newClient(Config{BaseURL: server.URL, ManagementKey: "secret"}).fetchLatestVersion(context.Background())
+		if err == nil {
+			t.Fatal("malformed payload must error")
+		}
+	})
+
+	t.Run("http failure", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "upstream broken", http.StatusBadGateway)
+		}))
+		defer server.Close()
+
+		_, err := newClient(Config{BaseURL: server.URL, ManagementKey: "secret"}).fetchLatestVersion(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "502") {
+			t.Fatalf("expected 502 error, got %v", err)
+		}
+	})
 }

@@ -5,12 +5,14 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestVersionStatusLineUpdateAvailable(t *testing.T) {
 	t.Parallel()
 
-	line := versionStatusLine(snapshotFor(Snapshot{CurrentVersion: "7.2.154", LatestVersion: "v7.2.155"}), false)
+	line := versionStatusLine(snapshotFor("7.2.154", "v7.2.155", ""), false)
 	if !strings.Contains(line, "7.2.154") || !strings.Contains(line, "7.2.155") || !strings.Contains(line, "available") {
 		t.Fatalf("version line = %q", line)
 	}
@@ -19,7 +21,7 @@ func TestVersionStatusLineUpdateAvailable(t *testing.T) {
 func TestVersionStatusLineUpToDate(t *testing.T) {
 	t.Parallel()
 
-	line := versionStatusLine(snapshotFor(Snapshot{CurrentVersion: "7.2.155", LatestVersion: "v7.2.155"}), false)
+	line := versionStatusLine(snapshotFor("7.2.155", "v7.2.155", ""), false)
 	if !strings.Contains(line, "7.2.155") || strings.Contains(line, "available") || strings.Contains(line, "ahead") {
 		t.Fatalf("version line = %q", line)
 	}
@@ -28,7 +30,7 @@ func TestVersionStatusLineUpToDate(t *testing.T) {
 func TestVersionStatusLineChecking(t *testing.T) {
 	t.Parallel()
 
-	line := versionStatusLine(snapshotFor(Snapshot{CurrentVersion: "7.2.154"}), true)
+	line := versionStatusLine(snapshotFor("7.2.154", "", ""), true)
 	if !strings.Contains(line, "checking") {
 		t.Fatalf("version line = %q", line)
 	}
@@ -37,7 +39,7 @@ func TestVersionStatusLineChecking(t *testing.T) {
 func TestVersionStatusLineUnknownCurrent(t *testing.T) {
 	t.Parallel()
 
-	line := versionStatusLine(snapshotFor(Snapshot{LatestVersion: "v7.2.155"}), false)
+	line := versionStatusLine(snapshotFor("", "v7.2.155", ""), false)
 	if !strings.Contains(line, "unknown") {
 		t.Fatalf("version line = %q", line)
 	}
@@ -46,7 +48,7 @@ func TestVersionStatusLineUnknownCurrent(t *testing.T) {
 func TestVersionStatusLineLatestFailure(t *testing.T) {
 	t.Parallel()
 
-	line := versionStatusLine(snapshotFor(Snapshot{CurrentVersion: "7.2.154", LatestError: "HTTP 502"}), false)
+	line := versionStatusLine(snapshotFor("7.2.154", "", "HTTP 502"), false)
 	if !strings.Contains(line, "7.2.154") || !strings.Contains(line, "unavailable") {
 		t.Fatalf("version line = %q", line)
 	}
@@ -55,7 +57,7 @@ func TestVersionStatusLineLatestFailure(t *testing.T) {
 func TestVersionStatusLineAheadOfLatest(t *testing.T) {
 	t.Parallel()
 
-	line := versionStatusLine(snapshotFor(Snapshot{CurrentVersion: "7.2.156", LatestVersion: "v7.2.155"}), false)
+	line := versionStatusLine(snapshotFor("7.2.156", "v7.2.155", ""), false)
 	if !strings.Contains(line, "ahead") || strings.Contains(line, "available") {
 		t.Fatalf("version line = %q", line)
 	}
@@ -64,7 +66,7 @@ func TestVersionStatusLineAheadOfLatest(t *testing.T) {
 func TestVersionStatusLineMalformedShowsRaw(t *testing.T) {
 	t.Parallel()
 
-	line := versionStatusLine(snapshotFor(Snapshot{CurrentVersion: "dev-build", LatestVersion: "v7.2.155"}), false)
+	line := versionStatusLine(snapshotFor("dev-build", "v7.2.155", ""), false)
 	if !strings.Contains(line, "dev-build") || strings.Contains(line, "available") {
 		t.Fatalf("version line = %q", line)
 	}
@@ -150,12 +152,50 @@ func fixedTime() time.Time {
 	return time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
 }
 
-func snapshotFor(s Snapshot) uiModel {
-	return uiModel{snapshot: s, latestVersion: s.LatestVersion, latestErr: s.LatestError}
+func snapshotFor(current, latest, latestErr string) uiModel {
+	snapshot := Snapshot{CurrentVersion: current}
+	return uiModel{snapshot: snapshot, latestVersion: latest, latestErr: latestErr}
 }
 
 func staleSnapshot() Snapshot {
 	stale := Snapshot{FetchedAt: fixedTime()}
 	stale.CurrentVersion = "old-header"
 	return stale
+}
+
+func TestRefreshKeyUsesOneGeneration(t *testing.T) {
+	t.Parallel()
+
+	model := newUIModel(configPathForTest(t))
+	model.mode = modeQuota
+	model.hasConfig = true
+	model.refreshSeq = 5
+	model.fetching = false
+
+	updated, cmd := model.updateQuota(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	after := updated.(uiModel)
+	if cmd == nil {
+		t.Fatal("R must issue refresh commands")
+	}
+	if !after.fetching || !after.versionChecking {
+		t.Fatalf("R must set fetching and versionChecking: %v/%v", after.fetching, after.versionChecking)
+	}
+
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("R must batch snapshot and version commands, got %T", msg)
+	}
+	for _, sub := range batch {
+		switch m := sub().(type) {
+		case snapshotMsg:
+			if m.seq != after.refreshSeq {
+				t.Fatalf("snapshot seq = %d, want %d", m.seq, after.refreshSeq)
+			}
+		case versionMsg:
+			if m.seq != after.refreshSeq {
+				t.Fatalf("version seq = %d, want %d", m.seq, after.refreshSeq)
+			}
+		}
+	}
 }

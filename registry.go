@@ -59,26 +59,6 @@ func saveViewRegistry(path string, reg viewRegistry) error {
 	return nil
 }
 
-type popupAction struct {
-	kind string
-	pane string
-}
-
-func popupOpen() popupAction {
-	return popupAction{kind: "open"}
-}
-
-func popupFocus(pane string) popupAction {
-	return popupAction{kind: "focus", pane: pane}
-}
-
-func planPopupActions(reg viewRegistry, tabID string) ([]popupAction, error) {
-	if pane := reg.entryFor(tabID); pane != "" {
-		return []popupAction{popupFocus(pane)}, nil
-	}
-	return []popupAction{popupOpen()}, nil
-}
-
 func clearStaleEntry(reg viewRegistry, tabID string) viewRegistry {
 	// ponytail: race window if two shortcut invocations run concurrently; acceptable for a single-user keybinding
 	cleared := viewRegistry{}

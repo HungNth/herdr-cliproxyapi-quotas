@@ -47,6 +47,4 @@ type Snapshot struct {
 	Groups         []ProviderQuota
 	FetchedAt      time.Time
 	CurrentVersion string
-	LatestVersion  string
-	LatestError    string
 }

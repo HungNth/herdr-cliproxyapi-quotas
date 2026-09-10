@@ -52,45 +52,6 @@ func TestSaveViewRegistryIsJSON(t *testing.T) {
 	}
 }
 
-func TestFocusExistingPaneTakesPrecedence(t *testing.T) {
-	t.Parallel()
-
-	actions, err := planPopupActions(viewRegistry{"w1:t1": "w1:p2"}, "w1:t1")
-	if err != nil {
-		t.Fatalf("planPopupActions() error = %v", err)
-	}
-	want := []popupAction{popupFocus("w1:p2")}
-	if len(actions) != len(want) || actions[0] != want[0] {
-		t.Fatalf("actions = %#v, want %v", actions, want)
-	}
-}
-
-func TestUnknownTabOpensNewView(t *testing.T) {
-	t.Parallel()
-
-	actions, err := planPopupActions(viewRegistry{"w1:t1": "w1:p2"}, "w1:t2")
-	if err != nil {
-		t.Fatalf("planPopupActions() error = %v", err)
-	}
-	want := []popupAction{popupOpen()}
-	if len(actions) != len(want) || actions[0] != want[0] {
-		t.Fatalf("actions = %#v, want %v", actions, want)
-	}
-}
-
-func TestMissingTabIDOpensNewView(t *testing.T) {
-	t.Parallel()
-
-	actions, err := planPopupActions(viewRegistry{}, "")
-	if err != nil {
-		t.Fatalf("planPopupActions() error = %v", err)
-	}
-	want := []popupAction{popupOpen()}
-	if len(actions) != len(want) || actions[0] != want[0] {
-		t.Fatalf("actions = %#v, want %v", actions, want)
-	}
-}
-
 func TestClearStaleEntryKeepsOtherTabs(t *testing.T) {
 	t.Parallel()
 

@@ -40,6 +40,8 @@ func fakeHerdrEnv(t *testing.T, opts struct {
 	t.Setenv("FAKE_HERDR_EXISTING_PANES", opts.existingPanes)
 	if opts.fail {
 		t.Setenv("FAKE_HERDR_FAIL", "1")
+	} else {
+		t.Setenv("FAKE_HERDR_FAIL", "")
 	}
 	t.Cleanup(func() { os.Remove(log) })
 	return log
@@ -268,5 +270,42 @@ func TestStaleRegistryEntryReopensFreshSplit(t *testing.T) {
 	}
 	if afterReg[tab] == "w1:deadpane" || afterReg[tab] == "" {
 		t.Fatalf("registry must hold newly opened pane: %v", afterReg)
+	}
+}
+
+func TestInvokingFromMovedQuotaPaneTogglesClose(t *testing.T) {
+	_, _, _ = setupLauncher(t, true)
+	t.Setenv("HERDR_TAB_ID", "w1:destTab")
+	quotaPane := "w1:quotaMoved"
+	t.Setenv("HERDR_PANE_ID", quotaPane)
+
+	reg := viewRegistry{"w1:origTab": quotaPane}
+	if err := saveViewRegistry(registryFile(t), reg); err != nil {
+		t.Fatal(err)
+	}
+	log := fakeHerdrEnv(t, struct {
+		existingPanes string
+		fail          bool
+	}{existingPanes: quotaPane})
+
+	if err := openQuotaView(); err != nil {
+		t.Fatalf("openQuotaView() error = %v", err)
+	}
+	calls := readCalls(t, log)
+	foundClose := false
+	for _, call := range calls {
+		if strings.Contains(call, "plugin pane close "+quotaPane) {
+			foundClose = true
+		}
+	}
+	if !foundClose {
+		t.Fatalf("must toggle-close when invoked from quota pane even if tab moved: %v", calls)
+	}
+	afterReg, err := loadViewRegistry(registryFile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterReg["w1:origTab"] != "" {
+		t.Fatalf("closed pane must be removed from original tab entry: %v", afterReg)
 	}
 }

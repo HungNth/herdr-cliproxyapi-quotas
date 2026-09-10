@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -197,5 +198,117 @@ func TestRefreshKeyUsesOneGeneration(t *testing.T) {
 				t.Fatalf("version seq = %d, want %d", m.seq, after.refreshSeq)
 			}
 		}
+	}
+}
+
+func renderWindows(width int) string {
+	reset := fixedTime().Add(90 * time.Minute)
+	snapshot := Snapshot{
+		FetchedAt: fixedTime(),
+		Groups: []ProviderQuota{{
+			Provider: ProviderCodex,
+			Title:    "Codex",
+			Accounts: []AccountQuota{{
+				Provider: ProviderCodex,
+				Name:     "a@b.c",
+				Windows: []QuotaWindow{
+					{Label: "5-hour", Remaining: floatPtr(86), ResetAt: &reset},
+					{Label: "Weekly", Remaining: floatPtr(70), ResetAt: &reset},
+				},
+				ManualResets: intPtr(3),
+			}},
+		}},
+	}
+	return renderSnapshot(snapshot, width, fixedTime())
+}
+
+func floatPtr(v float64) *float64 { return &v }
+func intPtr(v int) *int           { return &v }
+
+func plainLines(t *testing.T, rendered string) []string {
+	t.Helper()
+	stripped := regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`).ReplaceAllString(rendered, "")
+	return strings.Split(stripped, "\n")
+}
+
+func TestCompactRowsShowMetadataThenThinBar(t *testing.T) {
+	t.Parallel()
+
+	lines := plainLines(t, renderWindows(80))
+	joined := strings.Join(lines, "\n")
+	if strings.Contains(joined, "remaining") || strings.Contains(joined, "· resets") {
+		t.Fatalf("verbose prose must go: %q", joined)
+	}
+	if strings.Contains(joined, "(") {
+		t.Fatalf("countdown parentheses must go: %q", joined)
+	}
+	if !strings.Contains(joined, "86%") || !strings.Contains(joined, "in 1h30m") {
+		t.Fatalf("metadata row missing pct/countdown: %q", joined)
+	}
+	if !strings.Contains(joined, "10/09 20:30") {
+		t.Fatalf("absolute reset time missing: %q", joined)
+	}
+	thick := strings.Contains(joined, "█")
+	if thick {
+		t.Fatal("block glyphs must be replaced by thin lines")
+	}
+	if !strings.Contains(joined, "━") || !strings.Contains(joined, "─") {
+		t.Fatalf("thin bar glyphs missing: %q", joined)
+	}
+	if !strings.Contains(joined, "Manual resets  3") {
+		t.Fatalf("manual resets row wrong: %q", joined)
+	}
+}
+
+func TestCompactBarRowSitsBelowPercentage(t *testing.T) {
+	t.Parallel()
+
+	lines := plainLines(t, renderWindows(80))
+	var metaIndex, barIndex = -1, -1
+	for i, line := range lines {
+		if strings.Contains(line, "5-hour") && strings.Contains(line, "86%") {
+			metaIndex = i
+		}
+		if strings.Contains(line, "━") && metaIndex >= 0 && barIndex < 0 {
+			barIndex = i
+		}
+	}
+	if metaIndex < 0 || barIndex != metaIndex+1 {
+		t.Fatalf("bar row must directly follow metadata: meta=%d bar=%d", metaIndex, barIndex)
+	}
+	barLine := lines[barIndex]
+	if !strings.HasPrefix(barLine, " ") {
+		t.Fatalf("bar row must be indented: %q", barLine)
+	}
+	if len(barLine)-len(strings.TrimLeft(barLine, " ")) != len(lines[metaIndex])-len(strings.TrimLeft(lines[metaIndex], " "))+len("5-hour")+2 {
+		t.Fatalf("bar must start under percentage column: %q vs %q", barLine, lines[metaIndex])
+	}
+}
+
+func TestCompactUnknownAndReadyStates(t *testing.T) {
+	t.Parallel()
+
+	past := fixedTime().Add(-time.Hour)
+	snapshot := Snapshot{
+		FetchedAt: fixedTime(),
+		Groups: []ProviderQuota{{
+			Provider: ProviderClaude,
+			Title:    "Claude",
+			Accounts: []AccountQuota{{
+				Provider: ProviderClaude,
+				Name:     "x@y.z",
+				Windows: []QuotaWindow{
+					{Label: "5-hour", Remaining: nil, ResetAt: nil},
+					{Label: "Weekly", Remaining: floatPtr(40), ResetAt: &past},
+				},
+			}},
+		}},
+	}
+	joined := strings.Join(plainLines(t, renderSnapshot(snapshot, 80, fixedTime())), "\n")
+	if !strings.Contains(joined, "5-hour  —  reset —") {
+		t.Fatalf("unknown state wrong: %q", joined)
+	}
+	if !strings.Contains(joined, "Weekly   40%  ready") {
+		t.Fatalf("ready state wrong: %q", joined)
 	}
 }

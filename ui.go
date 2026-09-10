@@ -448,6 +448,14 @@ func renderSnapshot(snapshot Snapshot, width int, now time.Time) string {
 	}
 	var sections []string
 	for _, group := range snapshot.Groups {
+		labelWidth := 0
+		for _, account := range group.Accounts {
+			for _, window := range account.Windows {
+				if len(window.Label) > labelWidth {
+					labelWidth = len(window.Label)
+				}
+			}
+		}
 		lines := []string{groupStyle.Render(group.Title)}
 		for index, account := range group.Accounts {
 			if index > 0 {
@@ -455,14 +463,14 @@ func renderSnapshot(snapshot Snapshot, width int, now time.Time) string {
 			}
 			lines = append(lines, "  "+accountStyle.Render(account.Name)+renderAccountBadges(account))
 			for _, window := range account.Windows {
-				lines = append(lines, renderQuotaLine(window, now, barWidth))
+				lines = append(lines, renderQuotaLine(window, now, labelWidth, barWidth))
 			}
 			if account.Provider == ProviderCodex {
 				resets := "—"
 				if account.ManualResets != nil {
 					resets = fmt.Sprintf("%d", *account.ManualResets)
 				}
-				lines = append(lines, fmt.Sprintf("    %-22s %s", "Manual resets", resets))
+				lines = append(lines, "    Manual resets  "+resets)
 			}
 			if account.Error != "" {
 				lines = append(lines, "    "+errorStyle.Render("Unavailable: "+compactUIError(account.Error)))
@@ -473,25 +481,47 @@ func renderSnapshot(snapshot Snapshot, width int, now time.Time) string {
 	return strings.Join(sections, "\n\n")
 }
 
-func renderQuotaLine(window QuotaWindow, now time.Time, barWidth int) string {
-	label := fmt.Sprintf("%-22s", window.Label)
-	if window.Remaining == nil {
-		return "    " + label + dimStyle.Render(strings.Repeat("░", barWidth)+"   —  · resets —")
+func renderQuotaLine(window QuotaWindow, now time.Time, labelWidth int, barWidth int) string {
+	indent := "    "
+	label := fmt.Sprintf("%-*s", labelWidth, window.Label)
+	meta := indent + label + "  "
+	barPad := indent + strings.Repeat(" ", labelWidth+2)
+
+	switch {
+	case window.Remaining == nil && window.ResetAt == nil:
+		return meta + dimStyle.Render("—  reset —") + "\n" + barPad + dimStyle.Render(strings.Repeat("─", barWidth))
+	case window.Remaining == nil:
+		return meta + dimStyle.Render("—") + "  " + resetText(window, now) + "\n" + barPad + dimStyle.Render(strings.Repeat("─", barWidth))
 	}
+
 	remaining := clamp(*window.Remaining, 0, 100)
-	filled := int(math.Round(remaining / 100 * float64(barWidth)))
-	barStyle := goodStyle
-	if remaining <= 20 {
-		barStyle = errorStyle
-	} else if remaining <= 50 {
-		barStyle = warningStyle
-	}
-	bar := barStyle.Render(strings.Repeat("█", filled)) + dimStyle.Render(strings.Repeat("░", barWidth-filled))
-	reset := "—"
+	style := healthStyle(remaining)
+	meta += style.Render(fmt.Sprintf("%3.0f%%", remaining)) + "  " + resetText(window, now)
 	if window.ResetAt != nil {
-		reset = window.ResetAt.Local().Format("02/01 15:04") + " (" + resetCountdown(*window.ResetAt, now) + ")"
+		meta += "  " + dimStyle.Render(window.ResetAt.Local().Format("02/01 15:04"))
 	}
-	return fmt.Sprintf("    %s %s  %3.0f%% remaining  · resets %s", label, bar, remaining, reset)
+
+	filled := int(math.Round(remaining / 100 * float64(barWidth)))
+	bar := style.Render(strings.Repeat("━", filled)) + dimStyle.Render(strings.Repeat("─", barWidth-filled))
+	return meta + "\n" + barPad + bar
+}
+
+func resetText(window QuotaWindow, now time.Time) string {
+	if window.ResetAt == nil {
+		return dimStyle.Render("reset —")
+	}
+	return resetCountdown(*window.ResetAt, now)
+}
+
+func healthStyle(remaining float64) lipgloss.Style {
+	switch {
+	case remaining <= 20:
+		return errorStyle
+	case remaining <= 50:
+		return warningStyle
+	default:
+		return goodStyle
+	}
 }
 
 func resetCountdown(target, now time.Time) string {

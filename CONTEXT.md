@@ -36,6 +36,10 @@ _Avoid_: CPA quota reset, reset token
 The account and quota state produced by one complete refresh operation.
 _Avoid_: Usage report, cache
 
+**Refresh Interval**:
+The user-configured period between automatic Quota Snapshot refreshes.
+_Avoid_: Poll rate, timer, schedule
+
 **Shortcut Binding**:
 A user-owned Herdr keybinding that opens CPA Quota through its plugin action.
 _Avoid_: Plugin shortcut, auto-keybinding

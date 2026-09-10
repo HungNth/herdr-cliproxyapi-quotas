@@ -581,3 +581,148 @@ func TestSubmitConfigSetsErrorOnInvalidInput(t *testing.T) {
 		t.Fatal("expected validation error text on invalid URL")
 	}
 }
+
+func autoRefreshModel(t *testing.T) uiModel {
+	t.Helper()
+	model := newUIModel(configPathForTest(t))
+	model.mode = modeQuota
+	model.hasConfig = true
+	model.refreshSeq = 5
+	model.fetching = false
+	model.refreshInterval = 60 * time.Second
+	return model
+}
+
+// runBatch executes a batch's sub-commands and returns the messages that arrive
+// promptly. Long-lived timer commands are skipped by the timeout.
+func runBatch(t *testing.T, cmd tea.Cmd) []tea.Msg {
+	t.Helper()
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("expected batched commands, got %T", msg)
+	}
+	var msgs []tea.Msg
+	for _, sub := range batch {
+		done := make(chan tea.Msg, 1)
+		go func(c tea.Cmd) { done <- c() }(sub)
+		select {
+		case m := <-done:
+			msgs = append(msgs, m)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	return msgs
+}
+
+func assertFetchBatch(t *testing.T, msgs []tea.Msg, wantSeq int) {
+	t.Helper()
+	var snapshots, versions int
+	for _, msg := range msgs {
+		switch m := msg.(type) {
+		case snapshotMsg:
+			snapshots++
+			if m.seq != wantSeq {
+				t.Fatalf("snapshot seq = %d, want %d", m.seq, wantSeq)
+			}
+		case versionMsg:
+			versions++
+			if m.seq != wantSeq {
+				t.Fatalf("version seq = %d, want %d", m.seq, wantSeq)
+			}
+		}
+	}
+	if snapshots != 1 || versions != 1 {
+		t.Fatalf("batch messages = %#v, want one snapshot and one version", msgs)
+	}
+}
+
+func TestTickAfterIntervalStartsAutoRefresh(t *testing.T) {
+	t.Parallel()
+
+	model := autoRefreshModel(t)
+	start := fixedTime()
+	model.lastFetchAt = start
+	fire := start.Add(61 * time.Second)
+
+	updated, cmd := model.Update(tickMsg(fire))
+	after := updated.(uiModel)
+	if !after.fetching || !after.versionChecking {
+		t.Fatal("auto refresh must set fetching and versionChecking")
+	}
+	if !after.lastFetchAt.Equal(fire) {
+		t.Fatalf("countdown must restart at tick time: %v", after.lastFetchAt)
+	}
+	if after.refreshSeq != 6 {
+		t.Fatalf("seq = %d, want 6", after.refreshSeq)
+	}
+	assertFetchBatch(t, runBatch(t, cmd), 6)
+}
+
+func TestTickBeforeIntervalDoesNotFetch(t *testing.T) {
+	t.Parallel()
+
+	model := autoRefreshModel(t)
+	start := fixedTime()
+	model.lastFetchAt = start
+
+	updated, _ := model.Update(tickMsg(start.Add(30 * time.Second)))
+	after := updated.(uiModel)
+	if after.fetching || after.versionChecking {
+		t.Fatal("must not fetch before the interval elapses")
+	}
+	if !after.lastFetchAt.Equal(start) || after.refreshSeq != 5 {
+		t.Fatalf("state must be untouched: lastFetchAt=%v seq=%d", after.lastFetchAt, after.refreshSeq)
+	}
+}
+
+func TestTickWhileFetchingIsDropped(t *testing.T) {
+	t.Parallel()
+
+	model := autoRefreshModel(t)
+	overdue := fixedTime().Add(-2 * time.Minute)
+	model.lastFetchAt = overdue
+	model.fetching = true
+	model.refreshSeq = 9
+
+	updated, _ := model.Update(tickMsg(fixedTime()))
+	after := updated.(uiModel)
+	if !after.fetching || after.refreshSeq != 9 || !after.lastFetchAt.Equal(overdue) {
+		t.Fatal("in-flight tick must be dropped without state change")
+	}
+}
+
+func TestManualRefreshRestartsCountdown(t *testing.T) {
+	t.Parallel()
+
+	model := autoRefreshModel(t)
+	start := time.Now().Add(-time.Minute)
+	model.lastFetchAt = start
+
+	updated, cmd := model.updateQuota(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	after := updated.(uiModel)
+	if !after.lastFetchAt.After(start) {
+		t.Fatal("manual refresh must restart the countdown")
+	}
+	assertFetchBatch(t, runBatch(t, cmd), 6)
+}
+
+func TestTickNeverAutoFetchesInConfigModeOrWithoutConfig(t *testing.T) {
+	t.Parallel()
+
+	configMode := autoRefreshModel(t)
+	configMode.mode = modeConfig
+	configMode.lastFetchAt = fixedTime().Add(-time.Hour)
+	updated, _ := configMode.Update(tickMsg(fixedTime()))
+	if updated.(uiModel).fetching {
+		t.Fatal("configuration mode must not auto-fetch")
+	}
+
+	noConfig := autoRefreshModel(t)
+	noConfig.hasConfig = false
+	noConfig.lastFetchAt = time.Time{}
+	updated2, _ := noConfig.Update(tickMsg(fixedTime()))
+	if updated2.(uiModel).fetching {
+		t.Fatal("missing configuration must not auto-fetch")
+	}
+}

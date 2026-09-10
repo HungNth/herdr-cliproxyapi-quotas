@@ -79,6 +79,7 @@ herdr plugin link .
 - Focus policy: a configured Quota View opens without stealing focus (`--no-focus`), allowing you to continue typing. On first use (when credentials need to be entered), it receives focus automatically.
 - Toggle & dedup: each Herdr Tab owns at most one Quota View. Pressing `prefix+u` from a work pane focuses the existing Quota View; pressing `prefix+u` from inside the focused Quota View closes it as a toggle.
 - Resizing and manual rearrangements: the Quota View is a normal Herdr pane; you can drag split dividers, swap panes, or create additional splits around it. If closed manually or via `q`/Escape, the next `prefix+u` reopens a fresh split automatically.
+- Automatic refresh: the view re-fetches Quota Snapshots and CPA Version status automatically every 60 seconds. A manual refresh (`R` or `r`) restarts the countdown so polls stay evenly spaced.
 
 ## Keys
 

@@ -26,6 +26,8 @@ const (
 	modeConfig
 )
 
+const defaultRefreshInterval = 60 * time.Second
+
 type snapshotMsg struct {
 	seq      int
 	snapshot cpa.Snapshot
@@ -64,6 +66,9 @@ type uiModel struct {
 	versionChecking bool
 	latestVersion   string
 	latestErr       string
+
+	refreshInterval time.Duration
+	lastFetchAt     time.Time
 
 	width  int
 	height int
@@ -113,6 +118,10 @@ func newUIModel(path string) uiModel {
 		fetching:        hasConfig,
 		versionChecking: hasConfig,
 		refreshSeq:      seqForInitialFetch(hasConfig),
+		refreshInterval: defaultRefreshInterval,
+	}
+	if hasConfig {
+		model.lastFetchAt = time.Now()
 	}
 	if !hasConfig {
 		model.mode = modeConfig
@@ -126,9 +135,9 @@ func newUIModel(path string) uiModel {
 
 func (m uiModel) Init() tea.Cmd {
 	if m.hasConfig {
-		return tea.Batch(fetchSnapshotCmd(m.config, m.refreshSeq), fetchVersionCmd(m.config, m.refreshSeq), countdownTick())
+		return tea.Batch(fetchSnapshotCmd(m.config, m.refreshSeq), fetchVersionCmd(m.config, m.refreshSeq), refreshTick(m))
 	}
-	return countdownTick()
+	return refreshTick(m)
 }
 
 func seqForInitialFetch(hasConfig bool) int {
@@ -138,17 +147,45 @@ func seqForInitialFetch(hasConfig bool) int {
 	return 0
 }
 
-func countdownTick() tea.Cmd {
-	return tea.Tick(time.Minute, func(t time.Time) tea.Msg { return tickMsg(t) })
+func (m uiModel) autoRefreshDue(now time.Time) bool {
+	if m.mode != modeQuota || !m.hasConfig || m.fetching || m.lastFetchAt.IsZero() {
+		return false
+	}
+	return now.Sub(m.lastFetchAt) >= m.refreshInterval
+}
+
+// refreshTick schedules the next wake-up: the sooner of the remaining Refresh Interval
+// and one minute (the Reset Countdown re-render cadence).
+func refreshTick(m uiModel) tea.Cmd {
+	delay := time.Minute
+	if m.mode == modeQuota && m.hasConfig && !m.lastFetchAt.IsZero() {
+		delay = m.refreshInterval - time.Since(m.lastFetchAt)
+		if delay < time.Second {
+			delay = time.Second
+		}
+		if delay > time.Minute {
+			delay = time.Minute
+		}
+	}
+	return tea.Tick(delay, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
 func (m uiModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
 	case tickMsg:
+		now := time.Time(message)
 		if m.mode == modeQuota && !m.snapshot.FetchedAt.IsZero() {
 			m.refreshViewport()
 		}
-		return m, countdownTick()
+		if m.autoRefreshDue(now) {
+			m.fetching = true
+			m.versionChecking = true
+			m.errText = ""
+			m.lastFetchAt = now
+			seq := m.nextSeq()
+			return m, tea.Batch(fetchSnapshotCmd(m.config, seq), fetchVersionCmd(m.config, seq), refreshTick(m))
+		}
+		return m, refreshTick(m)
 	case tea.WindowSizeMsg:
 		m.width = message.Width
 		m.height = message.Height
@@ -194,6 +231,7 @@ func (m uiModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.latestErr = ""
 		m.versionChecking = true
 		m.mode = modeQuota
+		m.lastFetchAt = time.Now()
 		m.refreshViewport()
 		return m, tea.Batch(fetchVersionCmd(m.config, m.nextSeq()))
 	case tea.KeyMsg:
@@ -222,6 +260,7 @@ func (m uiModel) updateQuota(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.fetching = true
 		m.versionChecking = true
 		m.errText = ""
+		m.lastFetchAt = time.Now()
 		seq := m.nextSeq()
 		return m, tea.Batch(fetchSnapshotCmd(m.config, seq), fetchVersionCmd(m.config, seq))
 	case "c", "C":

@@ -58,16 +58,8 @@ func openQuotaView() error {
 	if err != nil {
 		return err
 	}
-	if pane := reg.entryFor(tabID); pane != "" {
-		if paneExists(herdr, pane) {
-			return runHerdr(herdr, "plugin", "pane", "focus", pane)
-		}
-		reg = clearStaleEntry(reg, tabID)
-		if err := saveViewRegistry(path, reg); err != nil {
-			return err
-		}
-	}
-	out, err := openNewPane(herdr)
+	configured := hasSavedConfig()
+	out, err := openNewPane(herdr, os.Getenv("HERDR_PANE_ID"), configured)
 	if err != nil {
 		return err
 	}
@@ -80,6 +72,16 @@ func openQuotaView() error {
 		}
 	}
 	return nil
+}
+
+// hasSavedConfig reports whether a valid CPA Endpoint configuration exists.
+func hasSavedConfig() bool {
+	path, err := configPath()
+	if err != nil {
+		return false
+	}
+	_, err = loadConfig(path)
+	return err == nil
 }
 
 // lockRegistry serializes registry mutations across concurrent plugin action processes.
@@ -99,8 +101,22 @@ func lockRegistry(path string) (func(), error) {
 	}, nil
 }
 
-func openNewPane(herdr string) (string, error) {
-	args := []string{"plugin", "pane", "open", "--plugin", pluginID, "--entrypoint", paneEntrypoint}
+func openNewPane(herdr string, targetPane string, configured bool) (string, error) {
+	args := []string{
+		"plugin", "pane", "open",
+		"--plugin", pluginID,
+		"--entrypoint", paneEntrypoint,
+		"--placement", "split",
+		"--direction", "right",
+	}
+	if targetPane != "" {
+		args = append(args, "--target-pane", targetPane)
+	}
+	if configured {
+		args = append(args, "--no-focus")
+	} else {
+		args = append(args, "--focus")
+	}
 	cmd := exec.Command(herdr, args...)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout

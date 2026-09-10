@@ -26,5 +26,5 @@ command = ["bin/cpa-quota", "install-shortcut"]
 [[panes]]
 id = "quota"
 title = "CPA Quota"
-placement = "overlay"
+placement = "split"
 command = ["bin/cpa-quota"]

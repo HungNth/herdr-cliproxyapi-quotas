@@ -442,20 +442,16 @@ func renderSnapshot(snapshot Snapshot, width int, now time.Time) string {
 	if len(snapshot.Groups) == 0 {
 		return "\n" + dimStyle.Render("No Codex, Antigravity, or Claude OAuth accounts were returned by CPA.")
 	}
-	barWidth := 18
-	if width > 0 && width < 72 {
-		barWidth = 10
+	if width <= 0 {
+		width = 80
 	}
+
 	var sections []string
 	for _, group := range snapshot.Groups {
-		labelWidth := 0
-		for _, account := range group.Accounts {
-			for _, window := range account.Windows {
-				if len(window.Label) > labelWidth {
-					labelWidth = len(window.Label)
-				}
-			}
-		}
+		shortenLabels := groupNeedsShortLabels(group, width, now)
+		labelWidth := groupLabelWidth(group, shortenLabels)
+		barWidth := calculateBarWidth(width, labelWidth)
+
 		lines := []string{groupStyle.Render(group.Title)}
 		for index, account := range group.Accounts {
 			if index > 0 {
@@ -463,7 +459,7 @@ func renderSnapshot(snapshot Snapshot, width int, now time.Time) string {
 			}
 			lines = append(lines, "  "+accountStyle.Render(account.Name)+renderAccountBadges(account))
 			for _, window := range account.Windows {
-				lines = append(lines, renderQuotaLine(window, now, labelWidth, barWidth))
+				lines = append(lines, renderQuotaLine(window, now, labelWidth, barWidth, width, shortenLabels))
 			}
 			if account.Provider == ProviderCodex {
 				resets := "—"
@@ -481,29 +477,123 @@ func renderSnapshot(snapshot Snapshot, width int, now time.Time) string {
 	return strings.Join(sections, "\n\n")
 }
 
-func renderQuotaLine(window QuotaWindow, now time.Time, labelWidth int, barWidth int) string {
+func compactLabel(raw string) string {
+	switch raw {
+	case "Claude & GPT models":
+		return "Claude/GPT"
+	case "Gemini models":
+		return "Gemini"
+	default:
+		return raw
+	}
+}
+
+func resolveLabel(raw string, shorten bool, maxLen int) string {
+	label := raw
+	if shorten {
+		label = compactLabel(raw)
+	}
+	if maxLen > 0 && len(label) > maxLen {
+		if maxLen <= 1 {
+			return "…"
+		}
+		return label[:maxLen-1] + "…"
+	}
+	return label
+}
+
+func groupLabelWidth(group ProviderQuota, shorten bool) int {
+	maxLen := 0
+	for _, account := range group.Accounts {
+		for _, window := range account.Windows {
+			l := len(resolveLabel(window.Label, shorten, 0))
+			if l > maxLen {
+				maxLen = l
+			}
+		}
+	}
+	return maxLen
+}
+
+func groupNeedsShortLabels(group ProviderQuota, width int, now time.Time) bool {
+	if width >= 75 {
+		return false
+	}
+	fullLabelWidth := groupLabelWidth(group, false)
+	for _, account := range group.Accounts {
+		for _, window := range account.Windows {
+			fullLineLen := 4 + fullLabelWidth + 2 + 4 + 2 + len(resetCountdownText(window, now)) + 2 + 11
+			if fullLineLen > width {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func calculateBarWidth(totalWidth int, labelWidth int) int {
+	available := totalWidth - (4 + labelWidth + 2)
+	if available < 6 {
+		return 6
+	}
+	if available > 24 {
+		return 24
+	}
+	return available
+}
+
+func renderQuotaLine(window QuotaWindow, now time.Time, labelWidth int, barWidth int, totalWidth int, shortenLabels bool) string {
 	indent := "    "
-	label := fmt.Sprintf("%-*s", labelWidth, window.Label)
-	meta := indent + label + "  "
-	barPad := indent + strings.Repeat(" ", labelWidth+2)
-
-	switch {
-	case window.Remaining == nil && window.ResetAt == nil:
-		return meta + dimStyle.Render("—  reset —") + "\n" + barPad + dimStyle.Render(strings.Repeat("─", barWidth))
-	case window.Remaining == nil:
-		return meta + dimStyle.Render("—") + "  " + resetText(window, now) + "\n" + barPad + dimStyle.Render(strings.Repeat("─", barWidth))
+	maxAllowedLabel := totalWidth - 4 - 2 - 4 - 2 - len(resetCountdownText(window, now))
+	effectiveLabelWidth := labelWidth
+	if maxAllowedLabel > 0 && effectiveLabelWidth > maxAllowedLabel {
+		effectiveLabelWidth = maxAllowedLabel
 	}
+	label := resolveLabel(window.Label, shortenLabels, effectiveLabelWidth)
+	paddedLabel := fmt.Sprintf("%-*s", effectiveLabelWidth, label)
+	meta := indent + paddedLabel + "  "
+	barPad := indent + strings.Repeat(" ", effectiveLabelWidth+2)
 
-	remaining := clamp(*window.Remaining, 0, 100)
-	style := healthStyle(remaining)
-	meta += style.Render(fmt.Sprintf("%3.0f%%", remaining)) + "  " + resetText(window, now)
+	resetStr := resetText(window, now)
+	timestamp := ""
 	if window.ResetAt != nil {
-		meta += "  " + dimStyle.Render(window.ResetAt.Local().Format("02/01 15:04"))
+		timestamp = window.ResetAt.Local().Format("02/01 15:04")
 	}
 
-	filled := int(math.Round(remaining / 100 * float64(barWidth)))
-	bar := style.Render(strings.Repeat("━", filled)) + dimStyle.Render(strings.Repeat("─", barWidth-filled))
+	var pctStr string
+	var barStyle lipgloss.Style
+	var remaining float64
+	if window.Remaining == nil {
+		pctStr = dimStyle.Render("—")
+		barStyle = dimStyle
+	} else {
+		remaining = clamp(*window.Remaining, 0, 100)
+		barStyle = healthStyle(remaining)
+		pctStr = barStyle.Render(fmt.Sprintf("%3.0f%%", remaining))
+	}
+
+	meta += pctStr + "  " + resetStr
+	if timestamp != "" && totalWidth >= 65 {
+		withTimestampLen := 4 + effectiveLabelWidth + 2 + 4 + 2 + len(resetCountdownText(window, now)) + 2 + 11
+		if withTimestampLen <= totalWidth {
+			meta += "  " + dimStyle.Render(timestamp)
+		}
+	}
+	var bar string
+	if window.Remaining == nil {
+		bar = dimStyle.Render(strings.Repeat("─", barWidth))
+	} else {
+		filled := int(math.Round(remaining / 100 * float64(barWidth)))
+		bar = barStyle.Render(strings.Repeat("━", filled)) + dimStyle.Render(strings.Repeat("─", barWidth-filled))
+	}
 	return meta + "\n" + barPad + bar
+}
+
+func resetCountdownText(window QuotaWindow, now time.Time) string {
+	if window.ResetAt == nil {
+		return "reset —"
+	}
+	return resetCountdown(*window.ResetAt, now)
 }
 
 func resetText(window QuotaWindow, now time.Time) string {

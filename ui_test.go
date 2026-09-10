@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/rivo/uniseg"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -310,5 +311,137 @@ func TestCompactUnknownAndReadyStates(t *testing.T) {
 	}
 	if !strings.Contains(joined, "Weekly   40%  ready") {
 		t.Fatalf("ready state wrong: %q", joined)
+	}
+}
+
+func renderFullSnapshot(width int) string {
+	reset := fixedTime().Add(90 * time.Minute)
+	snapshot := Snapshot{
+		FetchedAt: fixedTime(),
+		Groups: []ProviderQuota{
+			{
+				Provider: ProviderCodex,
+				Title:    "Codex",
+				Accounts: []AccountQuota{{
+					Provider: ProviderCodex,
+					Name:     "user@example.com",
+					Windows: []QuotaWindow{
+						{Label: "5-hour", Remaining: floatPtr(86), ResetAt: &reset},
+						{Label: "Weekly", Remaining: floatPtr(70), ResetAt: &reset},
+					},
+					ManualResets: intPtr(3),
+				}},
+			},
+			{
+				Provider: ProviderAntigravity,
+				Title:    "Antigravity",
+				Accounts: []AccountQuota{{
+					Provider: ProviderAntigravity,
+					Name:     "user@example.com",
+					Windows: []QuotaWindow{
+						{Label: "Claude & GPT models", Remaining: floatPtr(100), ResetAt: &reset},
+						{Label: "Gemini models", Remaining: floatPtr(95), ResetAt: &reset},
+					},
+				}},
+			},
+		},
+	}
+	return renderSnapshot(snapshot, width, fixedTime())
+}
+
+func lineWidth(s string) int {
+	clean := regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`).ReplaceAllString(s, "")
+	return uniseg.StringWidth(clean)
+}
+
+func TestNarrowPaneFittingNoLineOverflows(t *testing.T) {
+	t.Parallel()
+
+	for _, width := range []int{30, 40, 45, 60, 75, 80, 100} {
+		rendered := renderFullSnapshot(width)
+		lines := plainLines(t, rendered)
+		for _, line := range lines {
+			if w := lineWidth(line); w > width {
+				t.Fatalf("at width %d: line overflowed with width %d: %q", width, w, line)
+			}
+		}
+	}
+}
+
+func TestNarrowPanePreservesPercentageAndCountdown(t *testing.T) {
+	t.Parallel()
+
+	for _, width := range []int{40, 45, 60, 80} {
+		rendered := renderFullSnapshot(width)
+		lines := plainLines(t, rendered)
+		joined := strings.Join(lines, "\n")
+		if !strings.Contains(joined, "86%") || !strings.Contains(joined, "in 1h30m") {
+			t.Fatalf("at width %d: percentage or countdown dropped: %q", width, joined)
+		}
+		if !strings.Contains(joined, "100%") {
+			t.Fatalf("at width %d: antigravity percentage dropped: %q", width, joined)
+		}
+	}
+}
+
+func TestTimestampDroppedWhenWidthConstrained(t *testing.T) {
+	t.Parallel()
+
+	narrow := plainLines(t, renderFullSnapshot(45))
+	for _, line := range narrow {
+		if strings.Contains(line, "5-hour") && strings.Contains(line, "20:30") {
+			t.Fatalf("at width 45: timestamp must be dropped: %q", line)
+		}
+	}
+
+	wide := plainLines(t, renderFullSnapshot(80))
+	foundTimestamp := false
+	for _, line := range wide {
+		if strings.Contains(line, "5-hour") && strings.Contains(line, "20:30") {
+			foundTimestamp = true
+		}
+	}
+	if !foundTimestamp {
+		t.Fatal("at width 80: timestamp must appear")
+	}
+}
+
+func TestCompactLabelsUsedUnderPressure(t *testing.T) {
+	t.Parallel()
+
+	narrow := plainLines(t, renderFullSnapshot(45))
+	joined := strings.Join(narrow, "\n")
+	if !strings.Contains(joined, "Claude/GPT") {
+		t.Fatalf("at width 45: Claude/GPT compact label must be used: %q", joined)
+	}
+	if strings.Contains(joined, "Claude & GPT models") {
+		t.Fatalf("at width 45: long label must be dropped: %q", joined)
+	}
+	if !strings.Contains(joined, "Gemini") {
+		t.Fatalf("at width 45: Gemini compact label must be used: %q", joined)
+	}
+
+	wide := plainLines(t, renderFullSnapshot(80))
+	joinedWide := strings.Join(wide, "\n")
+	if !strings.Contains(joinedWide, "Claude & GPT models") {
+		t.Fatalf("at width 80: full label must appear: %q", joinedWide)
+	}
+}
+
+func TestBarLengthStaysBetweenLimits(t *testing.T) {
+	t.Parallel()
+
+	for _, width := range []int{35, 45, 60, 80, 120} {
+		rendered := renderFullSnapshot(width)
+		lines := plainLines(t, rendered)
+		for _, line := range lines {
+			if strings.Contains(line, "━") || (strings.Contains(line, "─") && strings.HasPrefix(line, " ")) {
+				trimmed := strings.TrimSpace(line)
+				barLen := uniseg.StringWidth(trimmed)
+				if barLen < 6 || barLen > 24 {
+					t.Fatalf("at width %d: bar length %d outside [6, 24]: %q", width, barLen, line)
+				}
+			}
+		}
 	}
 }

@@ -445,3 +445,100 @@ func TestBarLengthStaysBetweenLimits(t *testing.T) {
 		}
 	}
 }
+
+func TestConsecutiveAccountsHaveNoEmptyLine(t *testing.T) {
+	t.Parallel()
+
+	snapshot := Snapshot{
+		FetchedAt: fixedTime(),
+		Groups: []ProviderQuota{{
+			Provider: ProviderCodex,
+			Title:    "Codex",
+			Accounts: []AccountQuota{
+				{Provider: ProviderCodex, Name: "acc1@example.com", Windows: []QuotaWindow{{Label: "5-hour", Remaining: floatPtr(80)}}},
+				{Provider: ProviderCodex, Name: "acc2@example.com", Windows: []QuotaWindow{{Label: "5-hour", Remaining: floatPtr(90)}}},
+			},
+		}},
+	}
+	rendered := renderSnapshot(snapshot, 80, fixedTime())
+	lines := plainLines(t, rendered)
+	for i := 0; i < len(lines)-1; i++ {
+		if strings.Contains(lines[i], "acc1") {
+			for j := i + 1; j < len(lines); j++ {
+				if strings.Contains(lines[j], "acc2") {
+					between := lines[i+1 : j]
+					for _, b := range between {
+						if strings.TrimSpace(b) == "" {
+							t.Fatalf("empty line found between consecutive accounts: %q", between)
+						}
+					}
+					break
+				}
+			}
+		}
+	}
+}
+
+func TestProviderGroupsPreserveEmptyLine(t *testing.T) {
+	t.Parallel()
+
+	snapshot := Snapshot{
+		FetchedAt: fixedTime(),
+		Groups: []ProviderQuota{
+			{Provider: ProviderCodex, Title: "Codex", Accounts: []AccountQuota{{Provider: ProviderCodex, Name: "a@x.com"}}},
+			{Provider: ProviderClaude, Title: "Claude", Accounts: []AccountQuota{{Provider: ProviderClaude, Name: "b@x.com"}}},
+		},
+	}
+	rendered := renderSnapshot(snapshot, 80, fixedTime())
+	if !strings.Contains(rendered, "\n\n") {
+		t.Fatalf("provider groups must be separated by an empty line: %q", rendered)
+	}
+}
+
+func TestFooterCompactAtNarrowWidths(t *testing.T) {
+	t.Parallel()
+
+	model := newUIModel(configPathForTest(t))
+	model.mode = modeQuota
+	model.hasConfig = true
+
+	model.width = 45
+	narrowView := model.View()
+	if !strings.Contains(narrowView, "R refresh · C config · q close") {
+		t.Fatalf("narrow view must have compact footer: %q", narrowView)
+	}
+	if strings.Contains(narrowView, "g/G top/bottom") {
+		t.Fatalf("narrow footer must omit full navigation hints: %q", narrowView)
+	}
+
+	model.width = 80
+	wideView := model.View()
+	if !strings.Contains(wideView, "R refresh  C configure  j/k scroll  g/G top/bottom  q/Esc close") {
+		t.Fatalf("wide view must have full footer: %q", wideView)
+	}
+}
+
+func TestHeaderDropsPassiveUpdatedTimestampInNarrowWidth(t *testing.T) {
+	t.Parallel()
+
+	model := newUIModel(configPathForTest(t))
+	model.mode = modeQuota
+	model.hasConfig = true
+	model.snapshot = Snapshot{FetchedAt: fixedTime(), CurrentVersion: "7.2.155"}
+	model.latestVersion = "v7.2.156"
+
+	model.width = 45
+	narrow := model.View()
+	if strings.Contains(narrow, "Updated") {
+		t.Fatalf("narrow header must drop Updated timestamp: %q", narrow)
+	}
+	if !strings.Contains(narrow, "7.2.155 → v7.2.156") {
+		t.Fatalf("narrow header must preserve update availability: %q", narrow)
+	}
+
+	model.width = 80
+	wide := model.View()
+	if !strings.Contains(wide, "Updated") {
+		t.Fatalf("wide header must include Updated timestamp: %q", wide)
+	}
+}

@@ -330,7 +330,7 @@ func (m uiModel) View() string {
 	switch {
 	case m.fetching:
 		status = warningStyle.Render("Refreshing…")
-	case !m.snapshot.FetchedAt.IsZero():
+	case !m.snapshot.FetchedAt.IsZero() && m.width >= 65:
 		status = dimStyle.Render("Updated " + m.snapshot.FetchedAt.Local().Format("02/01 15:04:05"))
 	}
 	versionLine := versionStatusLine(m, m.versionChecking)
@@ -338,7 +338,12 @@ func (m uiModel) View() string {
 	if status != "" {
 		header += "  " + status
 	}
-	footer := dimStyle.Render("R refresh  C configure  j/k scroll  g/G top/bottom  q/Esc close")
+
+	footerText := "R refresh  C configure  j/k scroll  g/G top/bottom  q/Esc close"
+	if m.width > 0 && m.width < 65 {
+		footerText = "R refresh · C config · q close"
+	}
+	footer := dimStyle.Render(footerText)
 	if m.errText != "" {
 		footer = errorStyle.Render("Unavailable: "+compactUIError(m.errText)) + "  " + footer
 	}
@@ -453,10 +458,7 @@ func renderSnapshot(snapshot Snapshot, width int, now time.Time) string {
 		barWidth := calculateBarWidth(width, labelWidth)
 
 		lines := []string{groupStyle.Render(group.Title)}
-		for index, account := range group.Accounts {
-			if index > 0 {
-				lines = append(lines, "")
-			}
+		for _, account := range group.Accounts {
 			lines = append(lines, "  "+accountStyle.Render(account.Name)+renderAccountBadges(account))
 			for _, window := range account.Windows {
 				lines = append(lines, renderQuotaLine(window, now, labelWidth, barWidth, width, shortenLabels))

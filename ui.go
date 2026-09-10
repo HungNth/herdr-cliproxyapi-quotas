@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/rivo/uniseg"
 )
 
 type tickMsg time.Time
@@ -340,7 +341,10 @@ func (m uiModel) View() string {
 	}
 
 	footerText := "R refresh  C configure  j/k scroll  g/G top/bottom  q/Esc close"
-	if m.width > 0 && m.width < 65 {
+	switch {
+	case m.width > 0 && m.width < 32:
+		footerText = "R · C · q"
+	case m.width > 0 && m.width < 63:
 		footerText = "R refresh · C config · q close"
 	}
 	footer := dimStyle.Render(footerText)
@@ -393,7 +397,6 @@ func versionStatusLine(model uiModel, checking bool) string {
 	case latest == "":
 		return dimStyle.Render("CPA " + current)
 	}
-
 	comparison, ok := compareVersions(current, latest)
 	if !ok {
 		return dimStyle.Render("CPA " + current + " · latest " + latest)
@@ -402,6 +405,9 @@ func versionStatusLine(model uiModel, checking bool) string {
 	case 0:
 		return dimStyle.Render("CPA " + current)
 	case -1:
+		if model.width > 0 && model.width < 32 {
+			return warningStyle.Render(current + " → " + latest + " avail")
+		}
 		return warningStyle.Render("CPA " + current + " → " + latest + " available")
 	default:
 		return dimStyle.Render("CPA " + current + " · ahead of latest " + latest)
@@ -450,13 +456,18 @@ func renderSnapshot(snapshot Snapshot, width int, now time.Time) string {
 	if width <= 0 {
 		width = 80
 	}
-
 	var sections []string
 	for _, group := range snapshot.Groups {
-		shortenLabels := groupNeedsShortLabels(group, width, now)
-		labelWidth := groupLabelWidth(group, shortenLabels)
+		shortenLabels := !groupFitsFullLabels(group, width, now)
+		labelWidth := groupLabelWidth(group, shortenLabels, 0)
+		maxAllowed := width - 4 - 2 - 4 - 2 - 10
+		if maxAllowed < 1 {
+			maxAllowed = 1
+		}
+		if labelWidth > maxAllowed {
+			labelWidth = maxAllowed
+		}
 		barWidth := calculateBarWidth(width, labelWidth)
-
 		lines := []string{groupStyle.Render(group.Title)}
 		for _, account := range group.Accounts {
 			lines = append(lines, "  "+accountStyle.Render(account.Name)+renderAccountBadges(account))
@@ -504,33 +515,33 @@ func resolveLabel(raw string, shorten bool, maxLen int) string {
 	return label
 }
 
-func groupLabelWidth(group ProviderQuota, shorten bool) int {
-	maxLen := 0
+func groupLabelWidth(group ProviderQuota, shorten bool, maxLen int) int {
+	width := 0
 	for _, account := range group.Accounts {
 		for _, window := range account.Windows {
-			l := len(resolveLabel(window.Label, shorten, 0))
-			if l > maxLen {
-				maxLen = l
+			l := uniseg.StringWidth(resolveLabel(window.Label, shorten, maxLen))
+			if l > width {
+				width = l
 			}
 		}
 	}
-	return maxLen
+	return width
 }
 
-func groupNeedsShortLabels(group ProviderQuota, width int, now time.Time) bool {
-	if width >= 75 {
+func groupFitsFullLabels(group ProviderQuota, width int, now time.Time) bool {
+	if width < 55 {
 		return false
 	}
-	fullLabelWidth := groupLabelWidth(group, false)
+	fullLabelWidth := groupLabelWidth(group, false, 0)
 	for _, account := range group.Accounts {
 		for _, window := range account.Windows {
-			fullLineLen := 4 + fullLabelWidth + 2 + 4 + 2 + len(resetCountdownText(window, now)) + 2 + 11
-			if fullLineLen > width {
-				return true
+			minLineLen := 4 + fullLabelWidth + 2 + 4 + 2 + uniseg.StringWidth(resetCountdownText(window, now))
+			if minLineLen > width {
+				return false
 			}
 		}
 	}
-	return false
+	return true
 }
 
 func calculateBarWidth(totalWidth int, labelWidth int) int {
@@ -546,17 +557,12 @@ func calculateBarWidth(totalWidth int, labelWidth int) int {
 
 func renderQuotaLine(window QuotaWindow, now time.Time, labelWidth int, barWidth int, totalWidth int, shortenLabels bool) string {
 	indent := "    "
-	maxAllowedLabel := totalWidth - 4 - 2 - 4 - 2 - len(resetCountdownText(window, now))
-	effectiveLabelWidth := labelWidth
-	if maxAllowedLabel > 0 && effectiveLabelWidth > maxAllowedLabel {
-		effectiveLabelWidth = maxAllowedLabel
-	}
-	label := resolveLabel(window.Label, shortenLabels, effectiveLabelWidth)
-	paddedLabel := fmt.Sprintf("%-*s", effectiveLabelWidth, label)
+	label := resolveLabel(window.Label, shortenLabels, labelWidth)
+	paddedLabel := fmt.Sprintf("%-*s", labelWidth, label)
 	meta := indent + paddedLabel + "  "
-	barPad := indent + strings.Repeat(" ", effectiveLabelWidth+2)
+	barPad := indent + strings.Repeat(" ", labelWidth+2)
 
-	resetStr := resetText(window, now)
+	resetStr := resetCountdownText(window, now)
 	timestamp := ""
 	if window.ResetAt != nil {
 		timestamp = window.ResetAt.Local().Format("02/01 15:04")
@@ -574,13 +580,19 @@ func renderQuotaLine(window QuotaWindow, now time.Time, labelWidth int, barWidth
 		pctStr = barStyle.Render(fmt.Sprintf("%3.0f%%", remaining))
 	}
 
-	meta += pctStr + "  " + resetStr
-	if timestamp != "" && totalWidth >= 65 {
-		withTimestampLen := 4 + effectiveLabelWidth + 2 + 4 + 2 + len(resetCountdownText(window, now)) + 2 + 11
+	countdownRendered := resetStr
+	if window.ResetAt == nil {
+		countdownRendered = dimStyle.Render("reset —")
+	}
+
+	meta += pctStr + "  " + countdownRendered
+	if timestamp != "" && totalWidth >= 50 {
+		withTimestampLen := 4 + labelWidth + 2 + 4 + 2 + uniseg.StringWidth(resetStr) + 2 + 11
 		if withTimestampLen <= totalWidth {
 			meta += "  " + dimStyle.Render(timestamp)
 		}
 	}
+
 	var bar string
 	if window.Remaining == nil {
 		bar = dimStyle.Render(strings.Repeat("─", barWidth))
@@ -594,13 +606,6 @@ func renderQuotaLine(window QuotaWindow, now time.Time, labelWidth int, barWidth
 func resetCountdownText(window QuotaWindow, now time.Time) string {
 	if window.ResetAt == nil {
 		return "reset —"
-	}
-	return resetCountdown(*window.ResetAt, now)
-}
-
-func resetText(window QuotaWindow, now time.Time) string {
-	if window.ResetAt == nil {
-		return dimStyle.Render("reset —")
 	}
 	return resetCountdown(*window.ResetAt, now)
 }

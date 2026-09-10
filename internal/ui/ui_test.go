@@ -726,3 +726,135 @@ func TestTickNeverAutoFetchesInConfigModeOrWithoutConfig(t *testing.T) {
 		t.Fatal("missing configuration must not auto-fetch")
 	}
 }
+
+func TestSubmitConfigWithCustomInterval(t *testing.T) {
+	t.Parallel()
+
+	model := newUIModel(configPathForTest(t))
+	model.mode = modeConfig
+	model.baseInput.SetValue("http://127.0.0.1:8317")
+	model.keyInput.SetValue("secret")
+	model.intervalInput.SetValue("10")
+
+	nextModel, cmd := model.submitConfig()
+	uiNext, ok := nextModel.(uiModel)
+	if !ok {
+		t.Fatalf("expected uiModel, got %T", nextModel)
+	}
+	if uiNext.errText != "" {
+		t.Fatalf("unexpected validation error: %s", uiNext.errText)
+	}
+	if cmd == nil {
+		t.Fatal("expected configureCmd")
+	}
+}
+
+func TestSubmitConfigWithBlankIntervalDefaults(t *testing.T) {
+	t.Parallel()
+
+	model := newUIModel(configPathForTest(t))
+	model.mode = modeConfig
+	model.baseInput.SetValue("http://127.0.0.1:8317")
+	model.keyInput.SetValue("secret")
+	model.intervalInput.SetValue("   ")
+
+	nextModel, cmd := model.submitConfig()
+	uiNext := nextModel.(uiModel)
+	if uiNext.errText != "" {
+		t.Fatalf("unexpected validation error on blank interval: %s", uiNext.errText)
+	}
+	if cmd == nil {
+		t.Fatal("expected configureCmd")
+	}
+}
+
+func TestSubmitConfigValidationErrorsOnInterval(t *testing.T) {
+	t.Parallel()
+
+	t.Run("non-numeric input", func(t *testing.T) {
+		model := newUIModel(configPathForTest(t))
+		model.mode = modeConfig
+		model.baseInput.SetValue("http://127.0.0.1:8317")
+		model.keyInput.SetValue("secret")
+		model.intervalInput.SetValue("fast")
+
+		nextModel, _ := model.submitConfig()
+		uiNext := nextModel.(uiModel)
+		if !strings.Contains(uiNext.errText, "whole number of seconds") {
+			t.Fatalf("errText = %q, want whole number error", uiNext.errText)
+		}
+	})
+
+	t.Run("below minimum", func(t *testing.T) {
+		model := newUIModel(configPathForTest(t))
+		model.mode = modeConfig
+		model.baseInput.SetValue("http://127.0.0.1:8317")
+		model.keyInput.SetValue("secret")
+		model.intervalInput.SetValue("4")
+
+		nextModel, _ := model.submitConfig()
+		uiNext := nextModel.(uiModel)
+		if !strings.Contains(uiNext.errText, "at least 5") {
+			t.Fatalf("errText = %q, want at least 5 error", uiNext.errText)
+		}
+	})
+}
+
+func TestConfigFieldThreeWayFocusCycling(t *testing.T) {
+	t.Parallel()
+
+	model := newUIModel(configPathForTest(t))
+	model.mode = modeConfig
+	model.focusConfigField(0)
+
+	// Tab forward: 0 -> 1 -> 2 -> 0
+	m1, _ := model.updateConfig(tea.KeyMsg{Type: tea.KeyTab})
+	if m1.(uiModel).focused != 1 {
+		t.Fatalf("focused = %d, want 1", m1.(uiModel).focused)
+	}
+	m2, _ := m1.(uiModel).updateConfig(tea.KeyMsg{Type: tea.KeyTab})
+	if m2.(uiModel).focused != 2 {
+		t.Fatalf("focused = %d, want 2", m2.(uiModel).focused)
+	}
+	m3, _ := m2.(uiModel).updateConfig(tea.KeyMsg{Type: tea.KeyTab})
+	if m3.(uiModel).focused != 0 {
+		t.Fatalf("focused = %d, want 0", m3.(uiModel).focused)
+	}
+
+	// Shift+Tab backward: 0 -> 2 -> 1 -> 0
+	b1, _ := model.updateConfig(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if b1.(uiModel).focused != 2 {
+		t.Fatalf("backward focused = %d, want 2", b1.(uiModel).focused)
+	}
+	b2, _ := b1.(uiModel).updateConfig(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if b2.(uiModel).focused != 1 {
+		t.Fatalf("backward focused = %d, want 1", b2.(uiModel).focused)
+	}
+	b3, _ := b2.(uiModel).updateConfig(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if b3.(uiModel).focused != 0 {
+		t.Fatalf("backward focused = %d, want 0", b3.(uiModel).focused)
+	}
+}
+
+func TestAutoRefreshHonorsCustomInterval(t *testing.T) {
+	t.Parallel()
+
+	model := autoRefreshModel(t)
+	model.refreshInterval = 10 * time.Second
+	start := fixedTime()
+	model.lastFetchAt = start
+
+	// 9s is before 10s interval: no fetch
+	updated, _ := model.Update(tickMsg(start.Add(9 * time.Second)))
+	if updated.(uiModel).fetching {
+		t.Fatal("must not fetch at 9s for 10s interval")
+	}
+
+	// 11s is after 10s interval: auto-fetch triggered
+	updated2, cmd := model.Update(tickMsg(start.Add(11 * time.Second)))
+	after := updated2.(uiModel)
+	if !after.fetching {
+		t.Fatal("must fetch at 11s for 10s interval")
+	}
+	assertFetchBatch(t, runBatch(t, cmd), 6)
+}

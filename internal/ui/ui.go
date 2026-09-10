@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
-
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -52,9 +52,10 @@ type uiModel struct {
 	hasConfig  bool
 	mode       uiMode
 
-	baseInput textinput.Model
-	keyInput  textinput.Model
-	focused   int
+	baseInput     textinput.Model
+	keyInput      textinput.Model
+	intervalInput textinput.Model
+	focused       int
 
 	viewport viewport.Model
 	snapshot cpa.Snapshot
@@ -107,6 +108,12 @@ func newUIModel(path string) uiModel {
 	keyInput.EchoMode = textinput.EchoPassword
 	keyInput.EchoCharacter = '•'
 
+	intervalInput := textinput.New()
+	intervalInput.Prompt = ""
+	intervalInput.Placeholder = fmt.Sprintf("%d", config.DefaultRefreshIntervalSeconds)
+	intervalInput.SetValue(strconv.Itoa(cfg.RefreshInterval))
+	intervalInput.CharLimit = 16
+
 	model := uiModel{
 		configPath:      path,
 		config:          cfg,
@@ -114,11 +121,12 @@ func newUIModel(path string) uiModel {
 		mode:            modeQuota,
 		baseInput:       baseInput,
 		keyInput:        keyInput,
+		intervalInput:   intervalInput,
 		viewport:        viewport.New(0, 0),
 		fetching:        hasConfig,
 		versionChecking: hasConfig,
 		refreshSeq:      seqForInitialFetch(hasConfig),
-		refreshInterval: defaultRefreshInterval,
+		refreshInterval: time.Duration(cfg.RefreshInterval) * time.Second,
 	}
 	if hasConfig {
 		model.lastFetchAt = time.Now()
@@ -225,6 +233,7 @@ func (m uiModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.config = message.config
 		m.hasConfig = true
+		m.refreshInterval = time.Duration(message.config.RefreshInterval) * time.Second
 		m.snapshot = message.snapshot
 		m.errText = ""
 		m.latestVersion = ""
@@ -271,6 +280,7 @@ func (m uiModel) updateQuota(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.errText = ""
 		m.baseInput.SetValue(m.config.BaseURL)
 		m.keyInput.SetValue(m.config.ManagementKey)
+		m.intervalInput.SetValue(strconv.Itoa(m.config.RefreshInterval))
 		m.focusConfigField(0)
 		return m, nil
 	case "g":
@@ -298,12 +308,15 @@ func (m uiModel) updateConfig(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch key.String() {
-	case "tab", "shift+tab", "up", "down":
-		m.focusConfigField(1 - m.focused)
+	case "tab", "down":
+		m.focusConfigField((m.focused + 1) % 3)
+		return m, nil
+	case "shift+tab", "up":
+		m.focusConfigField((m.focused + 2) % 3)
 		return m, nil
 	case "enter":
-		if m.focused == 0 {
-			m.focusConfigField(1)
+		if m.focused < 2 {
+			m.focusConfigField(m.focused + 1)
 			return m, nil
 		}
 		return m.submitConfig()
@@ -315,16 +328,33 @@ func (m uiModel) updateConfig(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m uiModel) updateFocusedInput(message tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	if m.focused == 0 {
+	switch m.focused {
+	case 0:
 		m.baseInput, cmd = m.baseInput.Update(message)
-	} else {
+	case 1:
 		m.keyInput, cmd = m.keyInput.Update(message)
+	case 2:
+		m.intervalInput, cmd = m.intervalInput.Update(message)
 	}
 	return m, cmd
 }
 
 func (m uiModel) submitConfig() (tea.Model, tea.Cmd) {
-	cfg := config.Config{BaseURL: m.baseInput.Value(), ManagementKey: m.keyInput.Value()}.Normalized()
+	intervalStr := strings.TrimSpace(m.intervalInput.Value())
+	interval := 0
+	if intervalStr != "" {
+		parsed, err := strconv.Atoi(intervalStr)
+		if err != nil {
+			m.errText = "Refresh interval must be a whole number of seconds"
+			return m, nil
+		}
+		interval = parsed
+	}
+	cfg := config.Config{
+		BaseURL:         m.baseInput.Value(),
+		ManagementKey:   m.keyInput.Value(),
+		RefreshInterval: interval,
+	}.Normalized()
 	if err := cfg.Validate(); err != nil {
 		m.errText = err.Error()
 		return m, nil
@@ -336,20 +366,24 @@ func (m uiModel) submitConfig() (tea.Model, tea.Cmd) {
 
 func (m *uiModel) focusConfigField(index int) {
 	m.focused = index
-	if index == 0 {
-		m.baseInput.Focus()
-		m.keyInput.Blur()
-		return
-	}
 	m.baseInput.Blur()
-	m.keyInput.Focus()
+	m.keyInput.Blur()
+	m.intervalInput.Blur()
+	switch index {
+	case 0:
+		m.baseInput.Focus()
+	case 1:
+		m.keyInput.Focus()
+	case 2:
+		m.intervalInput.Focus()
+	}
 }
 
 func (m *uiModel) resize() {
 	width := max(20, m.width-4)
 	m.baseInput.Width = max(10, width-2)
 	m.keyInput.Width = max(10, width-2)
-	m.viewport.Width = max(1, m.width)
+	m.intervalInput.Width = max(10, width-2)
 	m.viewport.Height = max(1, m.height-4)
 	m.refreshViewport()
 }
@@ -404,6 +438,9 @@ func (m uiModel) configView() string {
 		"",
 		configLabelStyle.Render("Management key"),
 		m.keyInput.View(),
+		"",
+		configLabelStyle.Render("Refresh interval (seconds)"),
+		m.intervalInput.View(),
 	}
 	if m.errText != "" {
 		content = append(content, "", errorStyle.Render(compactUIError(m.errText)))

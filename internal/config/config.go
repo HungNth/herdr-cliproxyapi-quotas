@@ -10,17 +10,25 @@ import (
 	"strings"
 )
 
-const PluginID = "herdr-cliproxyapi-quotas"
+const (
+	PluginID                      = "herdr-cliproxyapi-quotas"
+	DefaultRefreshIntervalSeconds = 60
+	MinRefreshIntervalSeconds     = 5
+)
 
 var ErrConfigNotFound = errors.New("configuration not found")
 
 type Config struct {
-	BaseURL       string `json:"base_url"`
-	ManagementKey string `json:"management_key"`
+	BaseURL         string `json:"base_url"`
+	ManagementKey   string `json:"management_key"`
+	RefreshInterval int    `json:"refresh_interval"`
 }
 
 func DefaultConfig() Config {
-	return Config{BaseURL: "http://127.0.0.1:8317"}
+	return Config{
+		BaseURL:         "http://127.0.0.1:8317",
+		RefreshInterval: DefaultRefreshIntervalSeconds,
+	}
 }
 
 func Path() (string, error) {
@@ -77,6 +85,9 @@ func Save(path string, cfg Config) error {
 func (c Config) Normalized() Config {
 	c.BaseURL = strings.TrimRight(strings.TrimSpace(c.BaseURL), "/")
 	c.ManagementKey = strings.TrimSpace(c.ManagementKey)
+	if c.RefreshInterval == 0 {
+		c.RefreshInterval = DefaultRefreshIntervalSeconds
+	}
 	return c
 }
 
@@ -96,6 +107,9 @@ func (c Config) Validate() error {
 	}
 	if c.ManagementKey == "" {
 		return errors.New("Management key is required")
+	}
+	if c.RefreshInterval < MinRefreshIntervalSeconds {
+		return errors.New("Refresh interval must be at least 5 seconds")
 	}
 	return nil
 }

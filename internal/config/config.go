@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"encoding/json"
@@ -10,13 +10,20 @@ import (
 	"strings"
 )
 
-var errConfigNotFound = errors.New("configuration not found")
+const PluginID = "herdr-cliproxyapi-quotas"
 
-func defaultConfig() Config {
+var ErrConfigNotFound = errors.New("configuration not found")
+
+type Config struct {
+	BaseURL       string `json:"base_url"`
+	ManagementKey string `json:"management_key"`
+}
+
+func DefaultConfig() Config {
 	return Config{BaseURL: "http://127.0.0.1:8317"}
 }
 
-func configPath() (string, error) {
+func Path() (string, error) {
 	if dir := strings.TrimSpace(os.Getenv("HERDR_PLUGIN_CONFIG_DIR")); dir != "" {
 		return filepath.Join(dir, "config.json"), nil
 	}
@@ -24,13 +31,13 @@ func configPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve config directory: %w", err)
 	}
-	return filepath.Join(dir, "herdr", "plugins", pluginID, "config.json"), nil
+	return filepath.Join(dir, "herdr", "plugins", PluginID, "config.json"), nil
 }
 
-func loadConfig(path string) (Config, error) {
+func Load(path string) (Config, error) {
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return defaultConfig(), errConfigNotFound
+		return DefaultConfig(), ErrConfigNotFound
 	}
 	if err != nil {
 		return Config{}, fmt.Errorf("read config: %w", err)
@@ -39,16 +46,16 @@ func loadConfig(path string) (Config, error) {
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
-	cfg = cfg.normalized()
-	if err := cfg.validate(); err != nil {
+	cfg = cfg.Normalized()
+	if err := cfg.Validate(); err != nil {
 		return cfg, err
 	}
 	return cfg, nil
 }
 
-func saveConfig(path string, cfg Config) error {
-	cfg = cfg.normalized()
-	if err := cfg.validate(); err != nil {
+func Save(path string, cfg Config) error {
+	cfg = cfg.Normalized()
+	if err := cfg.Validate(); err != nil {
 		return err
 	}
 	raw, err := json.MarshalIndent(cfg, "", "  ")
@@ -67,13 +74,13 @@ func saveConfig(path string, cfg Config) error {
 	return nil
 }
 
-func (c Config) normalized() Config {
+func (c Config) Normalized() Config {
 	c.BaseURL = strings.TrimRight(strings.TrimSpace(c.BaseURL), "/")
 	c.ManagementKey = strings.TrimSpace(c.ManagementKey)
 	return c
 }
 
-func (c Config) validate() error {
+func (c Config) Validate() error {
 	if c.BaseURL == "" {
 		return errors.New("Base URL is required")
 	}

@@ -1,4 +1,4 @@
-package main
+package herdr
 
 import (
 	"encoding/json"

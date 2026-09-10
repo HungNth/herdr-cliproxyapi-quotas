@@ -1,20 +1,22 @@
-package main
+package config_test
 
 import (
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"cpa-quota/internal/config"
 )
 
 func TestSaveConfigRoundTripsWithPrivatePermissions(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "nested", "config.json")
-	want := Config{BaseURL: "http://127.0.0.1:8317/", ManagementKey: " secret "}
-	if err := saveConfig(path, want); err != nil {
+	want := config.Config{BaseURL: "http://127.0.0.1:8317/", ManagementKey: " secret "}
+	if err := config.Save(path, want); err != nil {
 		t.Fatalf("saveConfig() error = %v", err)
 	}
-	got, err := loadConfig(path)
+	got, err := config.Load(path)
 	if err != nil {
 		t.Fatalf("loadConfig() error = %v", err)
 	}

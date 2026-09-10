@@ -1,6 +1,8 @@
-package main
+package ui
 
 import (
+	"cpa-quota/internal/config"
+	"cpa-quota/internal/cpa"
 	"context"
 	"errors"
 	"fmt"
@@ -26,7 +28,7 @@ const (
 
 type snapshotMsg struct {
 	seq      int
-	snapshot Snapshot
+	snapshot cpa.Snapshot
 	err      error
 }
 
@@ -37,14 +39,14 @@ type versionMsg struct {
 }
 
 type configuredMsg struct {
-	config   Config
-	snapshot Snapshot
+	config   config.Config
+	snapshot cpa.Snapshot
 	err      error
 }
 
 type uiModel struct {
 	configPath string
-	config     Config
+	config     config.Config
 	hasConfig  bool
 	mode       uiMode
 
@@ -54,7 +56,7 @@ type uiModel struct {
 	focused   int
 
 	viewport viewport.Model
-	snapshot Snapshot
+	snapshot cpa.Snapshot
 	fetching bool
 	saving   bool
 	errText  string
@@ -81,15 +83,15 @@ var (
 )
 
 func newUIModel(path string) uiModel {
-	cfg, err := loadConfig(path)
+	cfg, err := config.Load(path)
 	hasConfig := err == nil
-	if errors.Is(err, errConfigNotFound) {
-		cfg = defaultConfig()
+	if errors.Is(err, config.ErrConfigNotFound) {
+		cfg = config.DefaultConfig()
 	}
 
 	baseInput := textinput.New()
 	baseInput.Prompt = ""
-	baseInput.Placeholder = defaultConfig().BaseURL
+	baseInput.Placeholder = config.DefaultConfig().BaseURL
 	baseInput.SetValue(cfg.BaseURL)
 	baseInput.CharLimit = 2048
 
@@ -116,7 +118,7 @@ func newUIModel(path string) uiModel {
 	if !hasConfig {
 		model.mode = modeConfig
 		model.focusConfigField(0)
-		if err != nil && !errors.Is(err, errConfigNotFound) {
+		if err != nil && !errors.Is(err, config.ErrConfigNotFound) {
 			model.errText = err.Error()
 		}
 	}
@@ -284,9 +286,8 @@ func (m uiModel) updateFocusedInput(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m uiModel) submitConfig() (tea.Model, tea.Cmd) {
-	cfg := Config{BaseURL: m.baseInput.Value(), ManagementKey: m.keyInput.Value()}.normalized()
-	if err := cfg.validate(); err != nil {
-		m.errText = err.Error()
+	cfg := config.Config{BaseURL: m.baseInput.Value(), ManagementKey: m.keyInput.Value()}.Normalized()
+	if err := cfg.Validate(); err != nil {
 		return m, nil
 	}
 	m.saving = true
@@ -397,7 +398,7 @@ func versionStatusLine(model uiModel, checking bool) string {
 	case latest == "":
 		return dimStyle.Render("CPA " + current)
 	}
-	comparison, ok := compareVersions(current, latest)
+	comparison, ok := cpa.CompareVersions(current, latest)
 	if !ok {
 		return dimStyle.Render("CPA " + current + " · latest " + latest)
 	}
@@ -419,37 +420,37 @@ func (m *uiModel) nextSeq() int {
 	return m.refreshSeq
 }
 
-func fetchSnapshotCmd(cfg Config, seq int) tea.Cmd {
+func fetchSnapshotCmd(cfg config.Config, seq int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
-		snapshot, err := newClient(cfg).FetchSnapshot(ctx)
+		snapshot, err := cpa.NewClient(cfg).FetchSnapshot(ctx)
 		return snapshotMsg{seq: seq, snapshot: snapshot, err: err}
 	}
 }
 
-func fetchVersionCmd(cfg Config, seq int) tea.Cmd {
+func fetchVersionCmd(cfg config.Config, seq int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
-		latest, err := newClient(cfg).fetchLatestVersion(ctx)
+		latest, err := cpa.NewClient(cfg).FetchLatestVersion(ctx)
 		return versionMsg{seq: seq, latest: latest, err: err}
 	}
 }
 
-func configureCmd(path string, cfg Config) tea.Cmd {
+func configureCmd(path string, cfg config.Config) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
-		snapshot, err := newClient(cfg).FetchSnapshot(ctx)
+		snapshot, err := cpa.NewClient(cfg).FetchSnapshot(ctx)
 		if err == nil {
-			err = saveConfig(path, cfg)
+			err = config.Save(path, cfg)
 		}
 		return configuredMsg{config: cfg, snapshot: snapshot, err: err}
 	}
 }
 
-func renderSnapshot(snapshot Snapshot, width int, now time.Time) string {
+func renderSnapshot(snapshot cpa.Snapshot, width int, now time.Time) string {
 	if len(snapshot.Groups) == 0 {
 		return "\n" + dimStyle.Render("No Codex, Antigravity, or Claude OAuth accounts were returned by CPA.")
 	}
@@ -474,7 +475,7 @@ func renderSnapshot(snapshot Snapshot, width int, now time.Time) string {
 			for _, window := range account.Windows {
 				lines = append(lines, renderQuotaLine(window, now, labelWidth, barWidth, width, shortenLabels))
 			}
-			if account.Provider == ProviderCodex {
+			if account.Provider == cpa.ProviderCodex {
 				resets := "—"
 				if account.ManualResets != nil {
 					resets = fmt.Sprintf("%d", *account.ManualResets)
@@ -515,7 +516,7 @@ func resolveLabel(raw string, shorten bool, maxLen int) string {
 	return label
 }
 
-func groupLabelWidth(group ProviderQuota, shorten bool, maxLen int) int {
+func groupLabelWidth(group cpa.ProviderQuota, shorten bool, maxLen int) int {
 	width := 0
 	for _, account := range group.Accounts {
 		for _, window := range account.Windows {
@@ -528,7 +529,7 @@ func groupLabelWidth(group ProviderQuota, shorten bool, maxLen int) int {
 	return width
 }
 
-func groupFitsFullLabels(group ProviderQuota, width int, now time.Time) bool {
+func groupFitsFullLabels(group cpa.ProviderQuota, width int, now time.Time) bool {
 	if width < 55 {
 		return false
 	}
@@ -555,7 +556,7 @@ func calculateBarWidth(totalWidth int, labelWidth int) int {
 	return available
 }
 
-func renderQuotaLine(window QuotaWindow, now time.Time, labelWidth int, barWidth int, totalWidth int, shortenLabels bool) string {
+func renderQuotaLine(window cpa.QuotaWindow, now time.Time, labelWidth int, barWidth int, totalWidth int, shortenLabels bool) string {
 	indent := "    "
 	label := resolveLabel(window.Label, shortenLabels, labelWidth)
 	paddedLabel := fmt.Sprintf("%-*s", labelWidth, label)
@@ -603,7 +604,7 @@ func renderQuotaLine(window QuotaWindow, now time.Time, labelWidth int, barWidth
 	return meta + "\n" + barPad + bar
 }
 
-func resetCountdownText(window QuotaWindow, now time.Time) string {
+func resetCountdownText(window cpa.QuotaWindow, now time.Time) string {
 	if window.ResetAt == nil {
 		return "reset —"
 	}
@@ -642,7 +643,7 @@ func resetCountdown(target, now time.Time) string {
 	}
 }
 
-func renderAccountBadges(account AccountQuota) string {
+func renderAccountBadges(account cpa.AccountQuota) string {
 	var badges []string
 	if account.Disabled {
 		badges = append(badges, warningStyle.Render("disabled"))
@@ -666,4 +667,13 @@ func compactUIError(message string) string {
 		return message[:137] + "..."
 	}
 	return message
+}
+
+// NewModel initializes the Bubble Tea model for Quota View.
+func NewModel(configPath string) tea.Model {
+	return newUIModel(configPath)
+}
+
+func clamp(value, minimum, maximum float64) float64 {
+	return math.Min(maximum, math.Max(minimum, value))
 }

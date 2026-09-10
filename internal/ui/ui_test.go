@@ -1,6 +1,7 @@
-package main
+package ui
 
 import (
+		"cpa-quota/internal/cpa"
 	"github.com/rivo/uniseg"
 	"path/filepath"
 	"regexp"
@@ -82,7 +83,7 @@ func TestViewShowsVersionStatus(t *testing.T) {
 	model.hasConfig = true
 	model.versionChecking = false
 	model.latestVersion = "v7.2.155"
-	model.snapshot = Snapshot{Groups: []ProviderQuota{{Provider: ProviderCodex, Title: "Codex", Accounts: []AccountQuota{{Provider: ProviderCodex, Name: "a@b.c"}}}}, FetchedAt: fixedTime()}
+	model.snapshot = cpa.Snapshot{Groups: []cpa.ProviderQuota{{Provider: cpa.ProviderCodex, Title: "Codex", Accounts: []cpa.AccountQuota{{Provider: cpa.ProviderCodex, Name: "a@b.c"}}}}, FetchedAt: fixedTime()}
 	model.snapshot.CurrentVersion = "7.2.154"
 
 	view := model.View()
@@ -133,7 +134,7 @@ func TestUpdateRejectsStaleSnapshotMessage(t *testing.T) {
 		t.Fatalf("stale snapshot applied: %q", after.snapshot.CurrentVersion)
 	}
 
-	current := Snapshot{FetchedAt: fixedTime()}
+	current := cpa.Snapshot{FetchedAt: fixedTime()}
 	current.CurrentVersion = "7.2.154"
 	updated, _ = model.Update(snapshotMsg{seq: 3, snapshot: current})
 	after = updated.(uiModel)
@@ -155,12 +156,12 @@ func fixedTime() time.Time {
 }
 
 func snapshotFor(current, latest, latestErr string) uiModel {
-	snapshot := Snapshot{CurrentVersion: current}
+	snapshot := cpa.Snapshot{CurrentVersion: current}
 	return uiModel{snapshot: snapshot, latestVersion: latest, latestErr: latestErr}
 }
 
-func staleSnapshot() Snapshot {
-	stale := Snapshot{FetchedAt: fixedTime()}
+func staleSnapshot() cpa.Snapshot {
+	stale := cpa.Snapshot{FetchedAt: fixedTime()}
 	stale.CurrentVersion = "old-header"
 	return stale
 }
@@ -204,15 +205,15 @@ func TestRefreshKeyUsesOneGeneration(t *testing.T) {
 
 func renderWindows(width int) string {
 	reset := fixedTime().Add(90 * time.Minute)
-	snapshot := Snapshot{
+	snapshot := cpa.Snapshot{
 		FetchedAt: fixedTime(),
-		Groups: []ProviderQuota{{
-			Provider: ProviderCodex,
+		Groups: []cpa.ProviderQuota{{
+			Provider: cpa.ProviderCodex,
 			Title:    "Codex",
-			Accounts: []AccountQuota{{
-				Provider: ProviderCodex,
+			Accounts: []cpa.AccountQuota{{
+				Provider: cpa.ProviderCodex,
 				Name:     "a@b.c",
-				Windows: []QuotaWindow{
+				Windows: []cpa.QuotaWindow{
 					{Label: "5-hour", Remaining: floatPtr(86), ResetAt: &reset},
 					{Label: "Weekly", Remaining: floatPtr(70), ResetAt: &reset},
 				},
@@ -290,15 +291,15 @@ func TestCompactUnknownAndReadyStates(t *testing.T) {
 	t.Parallel()
 
 	past := fixedTime().Add(-time.Hour)
-	snapshot := Snapshot{
+	snapshot := cpa.Snapshot{
 		FetchedAt: fixedTime(),
-		Groups: []ProviderQuota{{
-			Provider: ProviderClaude,
+		Groups: []cpa.ProviderQuota{{
+			Provider: cpa.ProviderClaude,
 			Title:    "Claude",
-			Accounts: []AccountQuota{{
-				Provider: ProviderClaude,
+			Accounts: []cpa.AccountQuota{{
+				Provider: cpa.ProviderClaude,
 				Name:     "x@y.z",
-				Windows: []QuotaWindow{
+				Windows: []cpa.QuotaWindow{
 					{Label: "5-hour", Remaining: nil, ResetAt: nil},
 					{Label: "Weekly", Remaining: floatPtr(40), ResetAt: &past},
 				},
@@ -316,16 +317,16 @@ func TestCompactUnknownAndReadyStates(t *testing.T) {
 
 func renderFullSnapshot(width int) string {
 	reset := fixedTime().Add(90 * time.Minute)
-	snapshot := Snapshot{
+	snapshot := cpa.Snapshot{
 		FetchedAt: fixedTime(),
-		Groups: []ProviderQuota{
+		Groups: []cpa.ProviderQuota{
 			{
-				Provider: ProviderCodex,
+				Provider: cpa.ProviderCodex,
 				Title:    "Codex",
-				Accounts: []AccountQuota{{
-					Provider: ProviderCodex,
+				Accounts: []cpa.AccountQuota{{
+					Provider: cpa.ProviderCodex,
 					Name:     "user@example.com",
-					Windows: []QuotaWindow{
+					Windows: []cpa.QuotaWindow{
 						{Label: "5-hour", Remaining: floatPtr(86), ResetAt: &reset},
 						{Label: "Weekly", Remaining: floatPtr(70), ResetAt: &reset},
 					},
@@ -333,12 +334,12 @@ func renderFullSnapshot(width int) string {
 				}},
 			},
 			{
-				Provider: ProviderAntigravity,
+				Provider: cpa.ProviderAntigravity,
 				Title:    "Antigravity",
-				Accounts: []AccountQuota{{
-					Provider: ProviderAntigravity,
+				Accounts: []cpa.AccountQuota{{
+					Provider: cpa.ProviderAntigravity,
 					Name:     "user@example.com",
-					Windows: []QuotaWindow{
+					Windows: []cpa.QuotaWindow{
 						{Label: "Claude & GPT models", Remaining: floatPtr(100), ResetAt: &reset},
 						{Label: "Gemini models", Remaining: floatPtr(95), ResetAt: &reset},
 					},
@@ -449,14 +450,14 @@ func TestBarLengthStaysBetweenLimits(t *testing.T) {
 func TestConsecutiveAccountsHaveNoEmptyLine(t *testing.T) {
 	t.Parallel()
 
-	snapshot := Snapshot{
+	snapshot := cpa.Snapshot{
 		FetchedAt: fixedTime(),
-		Groups: []ProviderQuota{{
-			Provider: ProviderCodex,
+		Groups: []cpa.ProviderQuota{{
+			Provider: cpa.ProviderCodex,
 			Title:    "Codex",
-			Accounts: []AccountQuota{
-				{Provider: ProviderCodex, Name: "acc1@example.com", Windows: []QuotaWindow{{Label: "5-hour", Remaining: floatPtr(80)}}},
-				{Provider: ProviderCodex, Name: "acc2@example.com", Windows: []QuotaWindow{{Label: "5-hour", Remaining: floatPtr(90)}}},
+			Accounts: []cpa.AccountQuota{
+				{Provider: cpa.ProviderCodex, Name: "acc1@example.com", Windows: []cpa.QuotaWindow{{Label: "5-hour", Remaining: floatPtr(80)}}},
+				{Provider: cpa.ProviderCodex, Name: "acc2@example.com", Windows: []cpa.QuotaWindow{{Label: "5-hour", Remaining: floatPtr(90)}}},
 			},
 		}},
 	}
@@ -482,11 +483,11 @@ func TestConsecutiveAccountsHaveNoEmptyLine(t *testing.T) {
 func TestProviderGroupsPreserveEmptyLine(t *testing.T) {
 	t.Parallel()
 
-	snapshot := Snapshot{
+	snapshot := cpa.Snapshot{
 		FetchedAt: fixedTime(),
-		Groups: []ProviderQuota{
-			{Provider: ProviderCodex, Title: "Codex", Accounts: []AccountQuota{{Provider: ProviderCodex, Name: "a@x.com"}}},
-			{Provider: ProviderClaude, Title: "Claude", Accounts: []AccountQuota{{Provider: ProviderClaude, Name: "b@x.com"}}},
+		Groups: []cpa.ProviderQuota{
+			{Provider: cpa.ProviderCodex, Title: "Codex", Accounts: []cpa.AccountQuota{{Provider: cpa.ProviderCodex, Name: "a@x.com"}}},
+			{Provider: cpa.ProviderClaude, Title: "Claude", Accounts: []cpa.AccountQuota{{Provider: cpa.ProviderClaude, Name: "b@x.com"}}},
 		},
 	}
 	rendered := renderSnapshot(snapshot, 80, fixedTime())
@@ -524,7 +525,7 @@ func TestHeaderDropsPassiveUpdatedTimestampInNarrowWidth(t *testing.T) {
 	model := newUIModel(configPathForTest(t))
 	model.mode = modeQuota
 	model.hasConfig = true
-	model.snapshot = Snapshot{FetchedAt: fixedTime(), CurrentVersion: "7.2.155"}
+	model.snapshot = cpa.Snapshot{FetchedAt: fixedTime(), CurrentVersion: "7.2.155"}
 	model.latestVersion = "v7.2.156"
 
 	model.width = 45
@@ -540,5 +541,25 @@ func TestHeaderDropsPassiveUpdatedTimestampInNarrowWidth(t *testing.T) {
 	wide := model.View()
 	if !strings.Contains(wide, "Updated") {
 		t.Fatalf("wide header must include Updated timestamp: %q", wide)
+	}
+}
+
+func TestResetCountdown(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		target time.Time
+		want   string
+	}{
+		{now.Add(-time.Minute), "ready"},
+		{now.Add(30 * time.Second), "in <1m"},
+		{now.Add(45 * time.Minute), "in 45m"},
+		{now.Add(90 * time.Minute), "in 1h30m"},
+		{now.Add(51 * time.Hour), "in 2d3h"},
+	}
+	for _, testCase := range cases {
+		if got := resetCountdown(testCase.target, now); got != testCase.want {
+			t.Fatalf("resetCountdown(%s) = %q, want %q", testCase.target, got, testCase.want)
+		}
 	}
 }

@@ -6,11 +6,11 @@ description = "View CLIProxyAPI account quotas and version status in a Herdr Tab
 platforms = ["linux", "macos", "windows"]
 
 [[build]]
-command = ["go", "build", "-trimpath", "-o", "bin/cpa-quotas", "."]
+command = ["go", "build", "-trimpath", "-o", "bin/cpa-quotas", "./cmd/cpa-quotas"]
 platforms = ["linux", "macos"]
 
 [[build]]
-command = ["go", "build", "-trimpath", "-o", "bin/cpa-quotas.exe", "."]
+command = ["go", "build", "-trimpath", "-o", "bin/cpa-quotas.exe", "./cmd/cpa-quotas"]
 platforms = ["windows"]
 
 [[actions]]

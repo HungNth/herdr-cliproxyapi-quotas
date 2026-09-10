@@ -1,6 +1,7 @@
-package main
+package cpa
 
 import (
+	"cpa-quota/internal/config"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -31,9 +32,9 @@ func TestParseVersionTriplet(t *testing.T) {
 		{"7.x.154", 0, 0, 0, false},
 	}
 	for _, testCase := range cases {
-		major, minor, patch, ok := parseVersionTriplet(testCase.in)
+		major, minor, patch, ok := ParseVersionTriplet(testCase.in)
 		if ok != testCase.ok || major != testCase.major || minor != testCase.minor || patch != testCase.patch {
-			t.Fatalf("parseVersionTriplet(%q) = %d,%d,%d,%v", testCase.in, major, minor, patch, ok)
+			t.Fatalf("ParseVersionTriplet(%q) = %d,%d,%d,%v", testCase.in, major, minor, patch, ok)
 		}
 	}
 }
@@ -54,9 +55,9 @@ func TestCompareVersions(t *testing.T) {
 		{"6.9.9", "7.0.0", -1},
 	}
 	for _, testCase := range cases {
-		got, ok := compareVersions(testCase.a, testCase.b)
+		got, ok := CompareVersions(testCase.a, testCase.b)
 		if !ok || got != testCase.want {
-			t.Fatalf("compareVersions(%q, %q) = %d,%v, want %d", testCase.a, testCase.b, got, ok, testCase.want)
+			t.Fatalf("CompareVersions(%q, %q) = %d,%v, want %d", testCase.a, testCase.b, got, ok, testCase.want)
 		}
 	}
 }
@@ -64,10 +65,10 @@ func TestCompareVersions(t *testing.T) {
 func TestCompareVersionsMalformed(t *testing.T) {
 	t.Parallel()
 
-	if _, ok := compareVersions("7.2", "7.2.1"); ok {
+	if _, ok := CompareVersions("7.2", "7.2.1"); ok {
 		t.Fatal("malformed current must not compare")
 	}
-	if _, ok := compareVersions("7.2.1", "next"); ok {
+	if _, ok := CompareVersions("7.2.1", "next"); ok {
 		t.Fatal("malformed latest must not compare")
 	}
 }
@@ -84,7 +85,7 @@ func TestMissingVersionHeaderLeavesCurrentUnknown(t *testing.T) {
 	}))
 	defer server.Close()
 
-	snapshot, err := newClient(Config{BaseURL: server.URL, ManagementKey: "secret"}).FetchSnapshot(context.Background())
+	snapshot, err := NewClient(config.Config{BaseURL: server.URL, ManagementKey: "secret"}).FetchSnapshot(context.Background())
 	if err != nil {
 		t.Fatalf("FetchSnapshot() error = %v", err)
 	}
@@ -105,7 +106,7 @@ func TestFetchLatestVersionRejectsBadAuthAndBadPayload(t *testing.T) {
 		}))
 		defer server.Close()
 
-		_, err := newClient(Config{BaseURL: server.URL, ManagementKey: "secret"}).fetchLatestVersion(context.Background())
+		_, err := NewClient(config.Config{BaseURL: server.URL, ManagementKey: "secret"}).FetchLatestVersion(context.Background())
 		if err == nil {
 			t.Fatal("malformed payload must error")
 		}
@@ -117,7 +118,7 @@ func TestFetchLatestVersionRejectsBadAuthAndBadPayload(t *testing.T) {
 		}))
 		defer server.Close()
 
-		_, err := newClient(Config{BaseURL: server.URL, ManagementKey: "secret"}).fetchLatestVersion(context.Background())
+		_, err := NewClient(config.Config{BaseURL: server.URL, ManagementKey: "secret"}).FetchLatestVersion(context.Background())
 		if err == nil || !strings.Contains(err.Error(), "502") {
 			t.Fatalf("expected 502 error, got %v", err)
 		}

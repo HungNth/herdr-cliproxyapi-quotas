@@ -1,6 +1,7 @@
-package main
+package cpa
 
 import (
+	"cpa-quota/internal/config"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -34,7 +35,7 @@ var antigravityQuotaURLs = []string{
 }
 
 type Client struct {
-	config Config
+	config config.Config
 	http   *http.Client
 }
 
@@ -61,9 +62,9 @@ type apiCallEnvelope struct {
 	Body            json.RawMessage `json:"body"`
 }
 
-func newClient(cfg Config) *Client {
+func NewClient(cfg config.Config) *Client {
 	return &Client{
-		config: cfg.normalized(),
+		config: cfg.Normalized(),
 		http:   &http.Client{Timeout: 30 * time.Second},
 	}
 }

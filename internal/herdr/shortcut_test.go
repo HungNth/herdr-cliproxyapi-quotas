@@ -1,4 +1,4 @@
-package main
+package herdr
 
 import (
 	"os"
@@ -6,7 +6,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestApplyShortcutInstall(t *testing.T) {
@@ -41,7 +40,7 @@ func TestApplyShortcutInstall(t *testing.T) {
 
 func TestInstallShortcutCmdSSHRefusal(t *testing.T) {
 	t.Setenv("SSH_CONNECTION", "1 2 3 4")
-	if err := installShortcutCmd(); err == nil || !strings.Contains(err.Error(), "SSH") {
+	if err := InstallShortcutCmd(); err == nil || !strings.Contains(err.Error(), "SSH") {
 		t.Fatalf("expected SSH refusal, got %v", err)
 	}
 }
@@ -53,7 +52,7 @@ func TestInstallShortcutCmdEndToEnd(t *testing.T) {
 	if err := os.WriteFile(configFile, []byte("[keys]\nprefix = \"ctrl+b\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := installShortcutCmd(); err != nil {
+	if err := InstallShortcutCmd(); err != nil {
 		t.Fatalf("installShortcutCmd() error = %v", err)
 	}
 	raw, err := os.ReadFile(configFile)
@@ -63,7 +62,7 @@ func TestInstallShortcutCmdEndToEnd(t *testing.T) {
 	if !strings.Contains(string(raw), "command = \""+pluginActionCommand+"\"") {
 		t.Fatalf("binding not written: %s", raw)
 	}
-	if err := installShortcutCmd(); err != nil {
+	if err := InstallShortcutCmd(); err != nil {
 		t.Fatalf("second install should be idempotent, got %v", err)
 	}
 }
@@ -75,24 +74,4 @@ func stubHerdrPath(t *testing.T) string {
 		return filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe")
 	}
 	return "/usr/bin/true"
-}
-
-func TestResetCountdown(t *testing.T) {
-	t.Parallel()
-	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
-	cases := []struct {
-		target time.Time
-		want   string
-	}{
-		{now.Add(-time.Minute), "ready"},
-		{now.Add(30 * time.Second), "in <1m"},
-		{now.Add(45 * time.Minute), "in 45m"},
-		{now.Add(90 * time.Minute), "in 1h30m"},
-		{now.Add(51 * time.Hour), "in 2d3h"},
-	}
-	for _, testCase := range cases {
-		if got := resetCountdown(testCase.target, now); got != testCase.want {
-			t.Fatalf("resetCountdown(%s) = %q, want %q", testCase.target, got, testCase.want)
-		}
-	}
 }

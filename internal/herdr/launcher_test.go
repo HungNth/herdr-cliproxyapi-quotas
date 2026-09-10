@@ -1,4 +1,4 @@
-package main
+package herdr
 
 import (
 	"os"
@@ -97,8 +97,8 @@ func registryFile(t *testing.T) string {
 func TestConfiguredOpenSplitsRightBesideInvoker(t *testing.T) {
 	log, _, _ := setupLauncher(t, true)
 
-	if err := openQuotaView(); err != nil {
-		t.Fatalf("openQuotaView() error = %v", err)
+	if err := OpenQuotaView(); err != nil {
+		t.Fatalf("OpenQuotaView() error = %v", err)
 	}
 	calls := readCalls(t, log)
 	if len(calls) != 1 {
@@ -107,8 +107,8 @@ func TestConfiguredOpenSplitsRightBesideInvoker(t *testing.T) {
 	call := calls[0]
 	for _, want := range []string{
 		"plugin pane open",
-		"--plugin " + pluginID,
-		"--entrypoint " + paneEntrypoint,
+		"--plugin " + PluginID,
+		"--entrypoint " + PaneEntrypoint,
 		"--placement split",
 		"--direction right",
 		"--target-pane w1:p1",
@@ -123,8 +123,8 @@ func TestConfiguredOpenSplitsRightBesideInvoker(t *testing.T) {
 func TestFirstUseOpenFocusesQuotaView(t *testing.T) {
 	log, _, _ := setupLauncher(t, false)
 
-	if err := openQuotaView(); err != nil {
-		t.Fatalf("openQuotaView() error = %v", err)
+	if err := OpenQuotaView(); err != nil {
+		t.Fatalf("OpenQuotaView() error = %v", err)
 	}
 	calls := readCalls(t, log)
 	if len(calls) != 1 {
@@ -142,9 +142,9 @@ func TestFailedOpenKeepsRegistryClean(t *testing.T) {
 	log, tab, _ := setupLauncher(t, true)
 	t.Setenv("FAKE_HERDR_FAIL", "1")
 
-	err := openQuotaView()
+	err := OpenQuotaView()
 	if err == nil {
-		t.Fatal("openQuotaView() must report a failed open")
+		t.Fatal("OpenQuotaView() must report a failed open")
 	}
 	if calls := readCalls(t, log); len(calls) != 1 {
 		t.Fatalf("calls = %v, want the failed open", calls)
@@ -158,8 +158,8 @@ func TestQuotaPaneRecordedInRegistryAfterOpen(t *testing.T) {
 	log, tab, _ := setupLauncher(t, true)
 	_ = log
 
-	if err := openQuotaView(); err != nil {
-		t.Fatalf("openQuotaView() error = %v", err)
+	if err := OpenQuotaView(); err != nil {
+		t.Fatalf("OpenQuotaView() error = %v", err)
 	}
 	raw, err := os.ReadFile(registryFile(t))
 	if err != nil {
@@ -181,8 +181,8 @@ func TestInvokingFromWorkPaneFocusesExistingQuotaView(t *testing.T) {
 		fail          bool
 	}{existingPanes: "w1:quota9," + invoker})
 
-	if err := openQuotaView(); err != nil {
-		t.Fatalf("openQuotaView() error = %v", err)
+	if err := OpenQuotaView(); err != nil {
+		t.Fatalf("OpenQuotaView() error = %v", err)
 	}
 	calls := readCalls(t, log)
 	foundFocus := false
@@ -212,8 +212,8 @@ func TestInvokingFromFocusedQuotaViewClosesIt(t *testing.T) {
 		fail          bool
 	}{existingPanes: quotaPane})
 
-	if err := openQuotaView(); err != nil {
-		t.Fatalf("openQuotaView() error = %v", err)
+	if err := OpenQuotaView(); err != nil {
+		t.Fatalf("OpenQuotaView() error = %v", err)
 	}
 	calls := readCalls(t, log)
 	foundClose := false
@@ -248,8 +248,8 @@ func TestStaleRegistryEntryReopensFreshSplit(t *testing.T) {
 		fail          bool
 	}{existingPanes: invoker})
 
-	if err := openQuotaView(); err != nil {
-		t.Fatalf("openQuotaView() error = %v", err)
+	if err := OpenQuotaView(); err != nil {
+		t.Fatalf("OpenQuotaView() error = %v", err)
 	}
 	calls := readCalls(t, log)
 	foundOpen := false
@@ -288,8 +288,8 @@ func TestInvokingFromMovedQuotaPaneTogglesClose(t *testing.T) {
 		fail          bool
 	}{existingPanes: quotaPane})
 
-	if err := openQuotaView(); err != nil {
-		t.Fatalf("openQuotaView() error = %v", err)
+	if err := OpenQuotaView(); err != nil {
+		t.Fatalf("OpenQuotaView() error = %v", err)
 	}
 	calls := readCalls(t, log)
 	foundClose := false

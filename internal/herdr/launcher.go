@@ -1,4 +1,4 @@
-package main
+package herdr
 
 import (
 	"bytes"
@@ -8,38 +8,10 @@ import (
 	"os/exec"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"cpa-quota/internal/config"
 )
 
-func main() {
-	if len(os.Args) > 1 && os.Args[1] == "open" {
-		if err := openQuotaView(); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		return
-	}
-	if len(os.Args) > 1 && os.Args[1] == "shortcut" {
-		if err := installShortcutCmd(); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		return
-	}
-
-	path, err := configPath()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	program := tea.NewProgram(newUIModel(path), tea.WithAltScreen())
-	if _, err := program.Run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-}
-
-func openQuotaView() error {
+func OpenQuotaView() error {
 	herdr := os.Getenv("HERDR_BIN_PATH")
 	if herdr == "" {
 		herdr = "herdr"
@@ -106,11 +78,11 @@ func openQuotaView() error {
 
 // hasSavedConfig reports whether a valid CPA Endpoint configuration exists.
 func hasSavedConfig() bool {
-	path, err := configPath()
+	path, err := config.Path()
 	if err != nil {
 		return false
 	}
-	_, err = loadConfig(path)
+	_, err = config.Load(path)
 	return err == nil
 }
 
@@ -134,8 +106,8 @@ func lockRegistry(path string) (func(), error) {
 func openNewPane(herdr string, targetPane string, configured bool) (string, error) {
 	args := []string{
 		"plugin", "pane", "open",
-		"--plugin", pluginID,
-		"--entrypoint", paneEntrypoint,
+		"--plugin", PluginID,
+		"--entrypoint", PaneEntrypoint,
 		"--placement", "split",
 		"--direction", "right",
 	}

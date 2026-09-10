@@ -1,4 +1,4 @@
-package main
+package herdr
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const pluginActionCommand = pluginID + ".open"
+const pluginActionCommand = PluginID + ".open"
 
 type shortcutStatus int
 
@@ -29,7 +29,7 @@ func herdrConfigPath() (string, error) {
 	return filepath.Join(dir, "herdr", "config.toml"), nil
 }
 
-func installShortcutCmd() error {
+func InstallShortcutCmd() error {
 	for _, env := range []string{"SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"} {
 		if os.Getenv(env) != "" {
 			return fmt.Errorf("refusing to edit Herdr config over SSH (%s is set); add the prefix+u binding manually", env)
@@ -73,56 +73,73 @@ func installShortcutCmd() error {
 // It never overwrites an existing prefix+u binding owned by another command.
 func applyShortcutInstall(content string) (string, shortcutStatus, error) {
 	inCommandBlock := false
-	blockKey := ""
-	blockCommand := ""
-	for _, line := range strings.Split(content, "\n") {
+	hasPrefixU := false
+	hasOtherCommand := false
+	hasExactCommand := false
+
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
 		if strings.HasPrefix(trimmed, "[[") {
-			inCommandBlock = trimmed == "[[keys.command]]"
-			blockKey, blockCommand = "", ""
-			continue
-		}
-		if strings.HasPrefix(trimmed, "[") {
-			inCommandBlock = false
+			inCommandBlock = strings.HasPrefix(trimmed, "[[keys.command]]")
+			hasPrefixU = false
+			hasOtherCommand = false
+			hasExactCommand = false
 			continue
 		}
 		if !inCommandBlock {
 			continue
 		}
-		if value, ok := tomlStringField(trimmed, "key"); ok {
-			blockKey = value
+		if matchStringField(trimmed, "key", "prefix+u") {
+			hasPrefixU = true
 		}
-		if value, ok := tomlStringField(trimmed, "command"); ok {
-			blockCommand = value
-		}
-		if blockKey == "prefix+u" && blockCommand != "" {
-			if blockCommand == pluginActionCommand {
-				return content, shortcutInstalled, nil
+		if strings.HasPrefix(trimmed, "command") {
+			if matchStringField(trimmed, "command", pluginActionCommand) {
+				hasExactCommand = true
+			} else {
+				hasOtherCommand = true
 			}
-			return "", shortcutConflict, fmt.Errorf("prefix+u is already bound to %s", blockCommand)
+		}
+		if hasPrefixU && hasExactCommand {
+			return content, shortcutInstalled, nil
+		}
+		if hasPrefixU && hasOtherCommand {
+			return content, shortcutConflict, fmt.Errorf("prefix+u already bound to another command in Herdr config")
 		}
 	}
-	block := "[[keys.command]]\nkey = \"prefix+u\"\ntype = \"plugin_action\"\ncommand = \"" + pluginActionCommand + "\"\ndescription = \"open CPA quota\"\n"
-	if content != "" && !strings.HasSuffix(content, "\n") {
+
+	block := strings.Join([]string{
+		"[[keys.command]]",
+		`key = "prefix+u"`,
+		`type = "plugin_action"`,
+		fmt.Sprintf(`command = %q`, pluginActionCommand),
+		`description = "open CPA quota"`,
+	}, "\n") + "\n"
+
+	if len(content) > 0 && !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
 	return content + "\n" + block, shortcutAdded, nil
 }
 
-func tomlStringField(line, field string) (string, bool) {
+func matchStringField(line, field, expected string) bool {
 	parts := strings.SplitN(line, "=", 2)
-	if len(parts) != 2 {
-		return "", false
-	}
-	if strings.TrimSpace(parts[0]) != field {
-		return "", false
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) != field {
+		return false
 	}
 	value := strings.TrimSpace(parts[1])
-	if len(value) < 2 || !strings.HasPrefix(value, "\"") || !strings.HasSuffix(value, "\"") {
-		return "", false
+	return strings.Trim(value, `"'`) == expected
+}
+
+func compactError(raw []byte) string {
+	message := strings.TrimSpace(string(raw))
+	if message == "" {
+		return "unknown error"
 	}
-	return value[1 : len(value)-1], true
+	message = strings.ReplaceAll(message, "\r\n", " ")
+	message = strings.ReplaceAll(message, "\n", " ")
+	if len(message) > 160 {
+		return message[:157] + "..."
+	}
+	return message
 }

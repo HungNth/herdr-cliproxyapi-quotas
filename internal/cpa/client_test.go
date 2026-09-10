@@ -1,6 +1,7 @@
-package main
+package cpa
 
 import (
+	"cpa-quota/internal/config"
 	"context"
 	"encoding/json"
 	"math"
@@ -115,7 +116,7 @@ func TestFetchSnapshotUsesOnlyReadOnlyManagementEndpoints(t *testing.T) {
 	}))
 	defer server.Close()
 
-	snapshot, err := newClient(Config{BaseURL: server.URL, ManagementKey: "secret"}).FetchSnapshot(context.Background())
+	snapshot, err := NewClient(config.Config{BaseURL: server.URL, ManagementKey: "secret"}).FetchSnapshot(context.Background())
 	if err != nil {
 		t.Fatalf("FetchSnapshot() error = %v", err)
 	}

@@ -21,14 +21,14 @@ For local development:
 - MacOS/Linux:
 
 ```bash
-go build -o bin/cpa-quotas .
+go build -o bin/cpa-quotas ./cmd/cpa-quotas
 herdr plugin link .
 ```
 
 - Windows:
 
 ```powershell
-go build -o bin/cpa-quotas.exe .
+go build -o bin/cpa-quotas.exe ./cmd/cpa-quotas
 herdr plugin link .
 ```
 

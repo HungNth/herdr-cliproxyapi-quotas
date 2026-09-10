@@ -1,16 +1,6 @@
-package main
+package cpa
 
 import "time"
-
-const (
-	pluginID       = "herdr-cliproxyapi-quotas"
-	paneEntrypoint = "quotas"
-)
-
-type Config struct {
-	BaseURL       string `json:"base_url"`
-	ManagementKey string `json:"management_key"`
-}
 
 type Provider string
 

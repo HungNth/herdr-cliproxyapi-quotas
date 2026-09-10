@@ -1,8 +1,8 @@
 package cpa
 
 import (
-	"cpa-quota/internal/config"
 	"context"
+	"cpa-quota/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -32,9 +32,9 @@ func TestParseVersionTriplet(t *testing.T) {
 		{"7.x.154", 0, 0, 0, false},
 	}
 	for _, testCase := range cases {
-		major, minor, patch, ok := ParseVersionTriplet(testCase.in)
+		major, minor, patch, ok := parseVersionTriplet(testCase.in)
 		if ok != testCase.ok || major != testCase.major || minor != testCase.minor || patch != testCase.patch {
-			t.Fatalf("ParseVersionTriplet(%q) = %d,%d,%d,%v", testCase.in, major, minor, patch, ok)
+			t.Fatalf("parseVersionTriplet(%q) = %d,%d,%d,%v", testCase.in, major, minor, patch, ok)
 		}
 	}
 }

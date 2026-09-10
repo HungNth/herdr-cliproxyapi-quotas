@@ -1,7 +1,7 @@
 package ui
 
 import (
-		"cpa-quota/internal/cpa"
+	"cpa-quota/internal/cpa"
 	"github.com/rivo/uniseg"
 	"path/filepath"
 	"regexp"
@@ -561,5 +561,23 @@ func TestResetCountdown(t *testing.T) {
 		if got := resetCountdown(testCase.target, now); got != testCase.want {
 			t.Fatalf("resetCountdown(%s) = %q, want %q", testCase.target, got, testCase.want)
 		}
+	}
+}
+
+func TestSubmitConfigSetsErrorOnInvalidInput(t *testing.T) {
+	t.Parallel()
+
+	model := newUIModel(configPathForTest(t))
+	model.mode = modeConfig
+	model.baseInput.SetValue("ftp://invalid")
+	model.keyInput.SetValue("secret")
+
+	nextModel, _ := model.submitConfig()
+	uiNext, ok := nextModel.(uiModel)
+	if !ok {
+		t.Fatalf("expected uiModel, got %T", nextModel)
+	}
+	if uiNext.errText == "" {
+		t.Fatal("expected validation error text on invalid URL")
 	}
 }

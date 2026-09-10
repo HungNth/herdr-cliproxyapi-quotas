@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"cpa-quota/internal/config"
 )
 
 var fakeHerdrPath string
@@ -107,8 +109,8 @@ func TestConfiguredOpenSplitsRightBesideInvoker(t *testing.T) {
 	call := calls[0]
 	for _, want := range []string{
 		"plugin pane open",
-		"--plugin " + PluginID,
-		"--entrypoint " + PaneEntrypoint,
+		"--plugin " + config.PluginID,
+		"--entrypoint " + paneEntrypoint,
 		"--placement split",
 		"--direction right",
 		"--target-pane w1:p1",

@@ -1,9 +1,9 @@
 package ui
 
 import (
+	"context"
 	"cpa-quota/internal/config"
 	"cpa-quota/internal/cpa"
-	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -49,7 +49,6 @@ type uiModel struct {
 	config     config.Config
 	hasConfig  bool
 	mode       uiMode
-
 
 	baseInput textinput.Model
 	keyInput  textinput.Model
@@ -104,16 +103,16 @@ func newUIModel(path string) uiModel {
 	keyInput.EchoCharacter = '•'
 
 	model := uiModel{
-		configPath: path,
-		config:     cfg,
-		hasConfig:  hasConfig,
-		mode:       modeQuota,
-		baseInput:  baseInput,
-		keyInput:   keyInput,
-		viewport:   viewport.New(0, 0),
-		fetching:   hasConfig,
+		configPath:      path,
+		config:          cfg,
+		hasConfig:       hasConfig,
+		mode:            modeQuota,
+		baseInput:       baseInput,
+		keyInput:        keyInput,
+		viewport:        viewport.New(0, 0),
+		fetching:        hasConfig,
 		versionChecking: hasConfig,
-		refreshSeq: seqForInitialFetch(hasConfig),
+		refreshSeq:      seqForInitialFetch(hasConfig),
 	}
 	if !hasConfig {
 		model.mode = modeConfig
@@ -288,6 +287,7 @@ func (m uiModel) updateFocusedInput(message tea.Msg) (tea.Model, tea.Cmd) {
 func (m uiModel) submitConfig() (tea.Model, tea.Cmd) {
 	cfg := config.Config{BaseURL: m.baseInput.Value(), ManagementKey: m.keyInput.Value()}.Normalized()
 	if err := cfg.Validate(); err != nil {
+		m.errText = err.Error()
 		return m, nil
 	}
 	m.saving = true
@@ -576,7 +576,7 @@ func renderQuotaLine(window cpa.QuotaWindow, now time.Time, labelWidth int, barW
 		pctStr = dimStyle.Render("—")
 		barStyle = dimStyle
 	} else {
-		remaining = clamp(*window.Remaining, 0, 100)
+		remaining = min(100.0, max(0.0, *window.Remaining))
 		barStyle = healthStyle(remaining)
 		pctStr = barStyle.Render(fmt.Sprintf("%3.0f%%", remaining))
 	}
@@ -672,8 +672,4 @@ func compactUIError(message string) string {
 // NewModel initializes the Bubble Tea model for Quota View.
 func NewModel(configPath string) tea.Model {
 	return newUIModel(configPath)
-}
-
-func clamp(value, minimum, maximum float64) float64 {
-	return math.Min(maximum, math.Max(minimum, value))
 }

@@ -12,7 +12,7 @@ import (
 
 const latestVersionPath = "/v0/management/latest-version"
 
-func ParseVersionTriplet(raw string) (major int, minor int, patch int, ok bool) {
+func parseVersionTriplet(raw string) (major int, minor int, patch int, ok bool) {
 	trimmed := raw
 	if strings.HasPrefix(raw, "v") || strings.HasPrefix(raw, "V") {
 		trimmed = raw[1:]
@@ -36,8 +36,8 @@ func ParseVersionTriplet(raw string) (major int, minor int, patch int, ok bool) 
 }
 
 func CompareVersions(current string, latest string) (int, bool) {
-	currentMajor, currentMinor, currentPatch, currentOK := ParseVersionTriplet(current)
-	latestMajor, latestMinor, latestPatch, latestOK := ParseVersionTriplet(latest)
+	currentMajor, currentMinor, currentPatch, currentOK := parseVersionTriplet(current)
+	latestMajor, latestMinor, latestPatch, latestOK := parseVersionTriplet(latest)
 	if !currentOK || !latestOK {
 		return 0, false
 	}

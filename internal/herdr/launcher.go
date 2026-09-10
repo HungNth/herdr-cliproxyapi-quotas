@@ -106,8 +106,8 @@ func lockRegistry(path string) (func(), error) {
 func openNewPane(herdr string, targetPane string, configured bool) (string, error) {
 	args := []string{
 		"plugin", "pane", "open",
-		"--plugin", PluginID,
-		"--entrypoint", PaneEntrypoint,
+		"--plugin", config.PluginID,
+		"--entrypoint", paneEntrypoint,
 		"--placement", "split",
 		"--direction", "right",
 	}

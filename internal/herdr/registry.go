@@ -7,12 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"cpa-quota/internal/config"
 )
 
-const (
-	PluginID       = "herdr-cliproxyapi-quotas"
-	PaneEntrypoint = "quotas"
-)
+const paneEntrypoint = "quotas"
 
 // viewRegistry maps a Herdr Tab to the plugin pane ID of its live Quota View.
 type viewRegistry map[string]string
@@ -32,7 +31,7 @@ func registryPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve state directory: %w", err)
 	}
-	return filepath.Join(dir, "herdr", "plugins", PluginID, "state", "views.json"), nil
+	return filepath.Join(dir, "herdr", "plugins", config.PluginID, "state", "views.json"), nil
 }
 
 func loadViewRegistry(path string) (viewRegistry, error) {

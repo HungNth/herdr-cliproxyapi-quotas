@@ -36,6 +36,17 @@ func TestApplyShortcutInstall(t *testing.T) {
 			t.Fatalf("status=%v err=%v", status, err)
 		}
 	})
+
+	t.Run("does not treat later standard tables as command blocks", func(t *testing.T) {
+		content := "[keys]\nprefix = \"ctrl+b\"\n\n[[keys.command]]\nkey = \"prefix+c\"\ntype = \"shell\"\ncommand = \"cargo test\"\n\n[terminal]\nkey = \"prefix+u\"\ncommand = \"" + pluginActionCommand + "\"\n"
+		updated, status, err := applyShortcutInstall(content)
+		if err != nil || status != shortcutAdded {
+			t.Fatalf("status=%v err=%v", status, err)
+		}
+		if !strings.Contains(updated, "[[keys.command]]\nkey = \"prefix+u\"") {
+			t.Fatalf("failed to append binding after non-command table: %s", updated)
+		}
+	})
 }
 
 func TestInstallShortcutCmdSSHRefusal(t *testing.T) {

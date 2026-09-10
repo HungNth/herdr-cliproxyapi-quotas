@@ -6,9 +6,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"cpa-quota/internal/config"
 )
 
-const pluginActionCommand = PluginID + ".open"
+const pluginActionCommand = config.PluginID + ".open"
 
 type shortcutStatus int
 
@@ -80,7 +82,7 @@ func applyShortcutInstall(content string) (string, shortcutStatus, error) {
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "[[") {
+		if strings.HasPrefix(trimmed, "[") {
 			inCommandBlock = strings.HasPrefix(trimmed, "[[keys.command]]")
 			hasPrefixU = false
 			hasOtherCommand = false

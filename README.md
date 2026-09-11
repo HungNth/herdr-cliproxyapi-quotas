@@ -4,6 +4,12 @@ A Herdr plugin for viewing CLIProxyAPI account quotas directly in your terminal 
 
 ## Quick start
 
+```
+herdr plugin install HungNth/herdr-cliproxyapi-quotas -y
+herdr plugin action invoke herdr-cliproxyapi-quotas.shortcut
+herdr server reload-config
+```
+
 - Open a Herdr terminal and press `prefix+u` to open the CLIProxyAPI Quota View.
 
 ![screenshot](images/herdr-cliproxyapi-quotas.webp)

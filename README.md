@@ -65,14 +65,14 @@ herdr server reload-config
 - MacOS/Linux:
 
 ```bash
-go build -o bin/cpa-quotas ./cmd/cpa-quotas
+make build # go build -o bin/cpa-quotas ./cmd/cpa-quotas
 herdr plugin link .
 ```
 
 - Windows:
 
 ```powershell
-go build -o bin/cpa-quotas.exe ./cmd/cpa-quotas
+make build # go build -o bin/cpa-quotas.exe ./cmd/cpa-quotas
 herdr plugin link .
 ```
 

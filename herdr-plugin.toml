@@ -1,6 +1,6 @@
 id = "herdr-cliproxyapi-quotas"
 name = "Herdr Cli Proxy API Quotas Plugin"
-version = "0.1.2"
+version = "0.1.3"
 min_herdr_version = "0.9.0"
 description = "View CLIProxyAPI account quotas and version status in a Herdr Tab."
 platforms = ["linux", "macos", "windows"]

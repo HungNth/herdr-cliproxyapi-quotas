@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestFetchSnapshotUsesOnlyReadOnlyManagementEndpoints(t *testing.T) {
@@ -93,12 +94,22 @@ func TestFetchSnapshotUsesOnlyReadOnlyManagementEndpoints(t *testing.T) {
 					"five_hour": map[string]any{"utilization": 10, "resets_at": "2030-01-01T10:00:00Z"},
 					"seven_day": map[string]any{"utilization": 30, "resets_at": "2030-01-07T10:00:00Z"},
 				})
-			case antigravityQuotaURLs[0]:
-				writeEnvelope(t, w, map[string]any{"models": map[string]any{
-					"claude-opus-4-6-thinking": map[string]any{"quotaInfo": map[string]any{"remainingFraction": 0.4, "resetTime": "2030-02-01T10:00:00Z"}},
-					"gpt-oss-120b-medium":      map[string]any{"quotaInfo": map[string]any{"remainingFraction": 0.7, "resetTime": "2030-02-01T11:00:00Z"}},
-					"gemini-3.1-pro-high":      map[string]any{"quotaInfo": map[string]any{"remainingFraction": 0.8, "resetTime": "2030-02-01T12:00:00Z"}},
-					"gemini-2.5-flash":         map[string]any{"quotaInfo": map[string]any{"remainingFraction": 0.01, "resetTime": "2030-02-01T13:00:00Z"}},
+			case antigravityQuotaURL:
+				writeEnvelope(t, w, map[string]any{"groups": []any{
+					map[string]any{
+						"displayName": "Claude and GPT models",
+						"buckets": []any{
+							map[string]any{"bucketId": "3p-5h", "window": "5h", "remainingFraction": 0.4, "resetTime": "2030-02-01T10:00:00Z"},
+							map[string]any{"bucketId": "3p-weekly", "window": "weekly", "remainingFraction": 0.7, "resetTime": "2030-02-01T11:00:00Z"},
+						},
+					},
+					map[string]any{
+						"displayName": "Gemini Models",
+						"buckets": []any{
+							map[string]any{"bucketId": "gemini-5h", "window": "5h", "remainingFraction": 0.8, "resetTime": "2030-02-01T12:00:00Z"},
+							map[string]any{"bucketId": "gemini-weekly", "window": "weekly", "remainingFraction": 0.9, "resetTime": "2030-02-01T13:00:00Z"},
+						},
+					},
 				}})
 			default:
 				recordError("unexpected upstream URL: " + call.URL)
@@ -144,8 +155,13 @@ func TestFetchSnapshotUsesOnlyReadOnlyManagementEndpoints(t *testing.T) {
 	if len(antigravity.Accounts) != 1 || !antigravity.Accounts[0].Unavailable {
 		t.Fatalf("Antigravity account = %#v", antigravity.Accounts)
 	}
+	if len(antigravity.Accounts[0].Windows) != 4 {
+		t.Fatalf("Antigravity windows count = %d, want 4", len(antigravity.Accounts[0].Windows))
+	}
 	assertRemaining(t, antigravity.Accounts[0].Windows[0], 40)
-	assertRemaining(t, antigravity.Accounts[0].Windows[1], 80)
+	assertRemaining(t, antigravity.Accounts[0].Windows[1], 70)
+	assertRemaining(t, antigravity.Accounts[0].Windows[2], 80)
+	assertRemaining(t, antigravity.Accounts[0].Windows[3], 90)
 
 	claude := findGroup(t, snapshot, ProviderClaude)
 	if len(claude.Accounts) != 1 || claude.Accounts[0].Name != "claude@example.com" {
@@ -192,5 +208,91 @@ func writeJSON(t *testing.T, w http.ResponseWriter, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(value); err != nil {
 		t.Fatalf("encode response: %v", err)
+	}
+}
+
+func TestParseAntigravityQuotaSummary(t *testing.T) {
+	t.Parallel()
+
+	raw := `{
+  "groups": [
+    {
+      "buckets": [
+        {
+          "bucketId": "gemini-weekly",
+          "displayName": "Weekly Limit Remaining",
+          "window": "weekly",
+          "resetTime": "2026-09-23T02:33:39Z",
+          "description": "You have used some of your weekly limit, it will fully refresh in 6 days, 17 hours.",
+          "remainingFraction": 0.8856122
+        },
+        {
+          "bucketId": "gemini-5h",
+          "displayName": "Five Hour Limit Remaining",
+          "window": "5h",
+          "resetTime": "2026-09-16T12:33:39Z",
+          "description": "You have used some of your 5-hour limit, it will fully refresh in 3 hours.",
+          "remainingFraction": 0.92559963
+        }
+      ],
+      "displayName": "Gemini Models",
+      "description": "Models within this group: Gemini Flash, Gemini Pro"
+    },
+    {
+      "buckets": [
+        {
+          "bucketId": "3p-weekly",
+          "displayName": "Weekly Limit Remaining",
+          "window": "weekly",
+          "resetTime": "2026-09-22T09:05:25Z",
+          "description": "You have hit your 5-hour limit, so the weekly limit does not currently apply. Your 5-hour limit will refresh in 2 hours, 5 minutes.",
+          "remainingFraction": 0.2524704
+        },
+        {
+          "bucketId": "3p-5h",
+          "displayName": "Five Hour Limit Remaining",
+          "window": "5h",
+          "resetTime": "2026-09-16T11:38:38Z",
+          "description": "You have hit your 5-hour limit, it will refresh in 2 hours, 5 minutes. If on a supported paid plan, you can use AI credits in the interim.",
+          "remainingFraction": 0
+        }
+      ],
+      "displayName": "Claude and GPT models",
+      "description": "Models within this group: Claude Opus, Claude Sonnet, GPT-OSS"
+    }
+  ]
+}`
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		t.Fatalf("unmarshal test payload: %v", err)
+	}
+
+	windows := parseAntigravityQuotaSummary(payload)
+	if len(windows) != 4 {
+		t.Fatalf("got %d windows, want 4", len(windows))
+	}
+
+	// Claude 5-hour
+	if windows[0].Label != "Claude 5-hour" || windows[0].Remaining == nil || *windows[0].Remaining != 0 {
+		t.Fatalf("Claude 5-hour = %#v", windows[0])
+	}
+	if windows[0].ResetAt == nil || windows[0].ResetAt.Format(time.RFC3339) != "2026-09-16T11:38:38Z" {
+		t.Fatalf("Claude 5-hour reset = %v", windows[0].ResetAt)
+	}
+
+	// Claude Weekly
+	if windows[1].Label != "Claude Weekly" || windows[1].Remaining == nil || math.Abs(*windows[1].Remaining-25.24704) > 0.001 {
+		t.Fatalf("Claude Weekly = %#v", windows[1])
+	}
+
+	// Gemini 5-hour
+	if windows[2].Label != "Gemini 5-hour" || windows[2].Remaining == nil || math.Abs(*windows[2].Remaining-92.559963) > 0.001 {
+		t.Fatalf("Gemini 5-hour = %#v", windows[2])
+	}
+
+	// Gemini Weekly
+	if windows[3].Label != "Gemini Weekly" || windows[3].Remaining == nil || math.Abs(*windows[3].Remaining-88.56122) > 0.001 {
+		t.Fatalf("Gemini Weekly = %#v", windows[3])
 	}
 }

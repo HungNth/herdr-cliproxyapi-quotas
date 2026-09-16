@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/rivo/uniseg"
 
 	"cpa-quota/internal/cpa"
@@ -343,8 +344,10 @@ func renderFullSnapshot(width int) string {
 					Provider: cpa.ProviderAntigravity,
 					Name:     "user@example.com",
 					Windows: []cpa.QuotaWindow{
-						{Label: "Claude & GPT models", Remaining: floatPtr(100), ResetAt: &reset},
-						{Label: "Gemini models", Remaining: floatPtr(95), ResetAt: &reset},
+						{Label: "Claude 5-hour", Remaining: floatPtr(100), ResetAt: &reset},
+						{Label: "Claude Weekly", Remaining: floatPtr(70), ResetAt: &reset},
+						{Label: "Gemini 5-hour", Remaining: floatPtr(95), ResetAt: &reset},
+						{Label: "Gemini Weekly", Remaining: floatPtr(85), ResetAt: &reset},
 					},
 				}},
 			},
@@ -415,19 +418,19 @@ func TestCompactLabelsUsedUnderPressure(t *testing.T) {
 
 	narrow := plainLines(t, renderFullSnapshot(45))
 	joined := strings.Join(narrow, "\n")
-	if !strings.Contains(joined, "Claude/GPT") {
-		t.Fatalf("at width 45: Claude/GPT compact label must be used: %q", joined)
+	if !strings.Contains(joined, "Claude 5h") {
+		t.Fatalf("at width 45: Claude 5h compact label must be used: %q", joined)
 	}
-	if strings.Contains(joined, "Claude & GPT models") {
+	if strings.Contains(joined, "Claude 5-hour") {
 		t.Fatalf("at width 45: long label must be dropped: %q", joined)
 	}
-	if !strings.Contains(joined, "Gemini") {
-		t.Fatalf("at width 45: Gemini compact label must be used: %q", joined)
+	if !strings.Contains(joined, "Gemini 5h") {
+		t.Fatalf("at width 45: Gemini 5h compact label must be used: %q", joined)
 	}
 
 	wide := plainLines(t, renderFullSnapshot(80))
 	joinedWide := strings.Join(wide, "\n")
-	if !strings.Contains(joinedWide, "Claude & GPT models") {
+	if !strings.Contains(joinedWide, "Claude 5-hour") {
 		t.Fatalf("at width 80: full label must appear: %q", joinedWide)
 	}
 }
@@ -870,4 +873,35 @@ func TestAutoRefreshHonorsCustomInterval(t *testing.T) {
 		t.Fatal("must fetch at 11s for 10s interval")
 	}
 	assertFetchBatch(t, runBatch(t, cmd), 6)
+}
+
+func TestHealthStyleThresholds(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		remaining float64
+		want      lipgloss.Style
+		name      string
+	}{
+		{remaining: 0.0, want: errorStyle, name: "0% is critical red"},
+		{remaining: 15.0, want: errorStyle, name: "15% is critical red"},
+		{remaining: 30.0, want: errorStyle, name: "30% boundary is critical red"},
+		{remaining: 30.1, want: warningStyle, name: "30.1% is warning yellow"},
+		{remaining: 50.0, want: warningStyle, name: "50% is warning yellow"},
+		{remaining: 69.9, want: warningStyle, name: "69.9% is warning yellow"},
+		{remaining: 70.0, want: goodStyle, name: "70% boundary is healthy green"},
+		{remaining: 85.0, want: goodStyle, name: "85% is healthy green"},
+		{remaining: 100.0, want: goodStyle, name: "100% is healthy green"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := healthStyle(tc.remaining)
+			if got.GetForeground() != tc.want.GetForeground() {
+				t.Fatalf("healthStyle(%v) foreground = %v, want %v", tc.remaining, got.GetForeground(), tc.want.GetForeground())
+			}
+		})
+	}
 }

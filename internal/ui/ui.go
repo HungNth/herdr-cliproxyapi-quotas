@@ -573,10 +573,14 @@ func renderSnapshot(snapshot cpa.Snapshot, width int, now time.Time) string {
 
 func compactLabel(raw string) string {
 	switch raw {
-	case "Claude & GPT models":
-		return "Claude/GPT"
-	case "Gemini models":
-		return "Gemini"
+	case "Claude 5-hour":
+		return "Claude 5h"
+	case "Claude Weekly":
+		return "Claude Wk"
+	case "Gemini 5-hour":
+		return "Gemini 5h"
+	case "Gemini Weekly":
+		return "Gemini Wk"
 	default:
 		return raw
 	}
@@ -693,9 +697,9 @@ func resetCountdownText(window cpa.QuotaWindow, now time.Time) string {
 
 func healthStyle(remaining float64) lipgloss.Style {
 	switch {
-	case remaining <= 20:
+	case remaining <= 30:
 		return errorStyle
-	case remaining <= 50:
+	case remaining < 70:
 		return warningStyle
 	default:
 		return goodStyle

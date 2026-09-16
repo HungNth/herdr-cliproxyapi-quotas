@@ -28,11 +28,10 @@ const (
 	googleLoadAssistURL  = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
 )
 
-var antigravityQuotaURLs = []string{
-	"https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
-	"https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
-	"https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:fetchAvailableModels",
-}
+const (
+	antigravityQuotaURL         = "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
+	defaultAntigravityProjectID = "aicode-consumers"
+)
 
 type Client struct {
 	config config.Config
@@ -302,7 +301,12 @@ func (c *Client) queryClaude(ctx context.Context, task queryTask) AccountQuota {
 
 func (c *Client) queryAntigravity(ctx context.Context, task queryTask) AccountQuota {
 	account := baseAccount(task, "")
-	account.Windows = []QuotaWindow{{Label: "Claude & GPT models"}, {Label: "Gemini models"}}
+	account.Windows = []QuotaWindow{
+		{Label: "Claude 5-hour"},
+		{Label: "Claude Weekly"},
+		{Label: "Gemini 5-hour"},
+		{Label: "Gemini Weekly"},
+	}
 	authIndex := entryString(task.entry, "auth_index", "authIndex")
 	if authIndex == "" {
 		account.Error = "missing auth_index"
@@ -315,36 +319,36 @@ func (c *Client) queryAntigravity(ctx context.Context, task queryTask) AccountQu
 			projectID = projectIDFromAssist(payload)
 		}
 	}
-	requestData := map[string]any{}
-	if projectID != "" {
-		requestData["project"] = projectID
+	if projectID == "" {
+		projectID = defaultAntigravityProjectID
 	}
+	requestData := map[string]any{"project": projectID}
 	data, _ := json.Marshal(requestData)
 	headers := map[string]string{
 		"Authorization": "Bearer $TOKEN$",
 		"Content-Type":  "application/json",
-		"User-Agent":    "antigravity/1.11.5 cpa-quota",
+		"User-Agent":    "antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)",
 	}
-	var payload map[string]any
-	var lastErr error
-	for _, upstreamURL := range antigravityQuotaURLs {
-		payload, lastErr = c.callUpstream(ctx, apiCallRequest{
-			AuthIndex: authIndex,
-			Method:    http.MethodPost,
-			URL:       upstreamURL,
-			Header:    headers,
-			Data:      string(data),
-		})
-		if lastErr == nil {
+	payload, err := c.callUpstream(ctx, apiCallRequest{
+		AuthIndex: authIndex,
+		Method:    http.MethodPost,
+		URL:       antigravityQuotaURL,
+		Header:    headers,
+		Data:      string(data),
+	})
+	if err != nil {
+		account.Error = err.Error()
+		return account
+	}
+	account.Windows = parseAntigravityQuotaSummary(payload)
+	hasAny := false
+	for _, w := range account.Windows {
+		if w.Remaining != nil {
+			hasAny = true
 			break
 		}
 	}
-	if lastErr != nil {
-		account.Error = lastErr.Error()
-		return account
-	}
-	account.Windows = parseAntigravityFamilies(payload)
-	if account.Windows[0].Remaining == nil && account.Windows[1].Remaining == nil {
+	if !hasAny {
 		account.Error = "no supported model quota returned"
 	}
 	return account
@@ -497,53 +501,67 @@ func parseManualResetCount(payload map[string]any) *int {
 	return &count
 }
 
-func parseAntigravityFamilies(payload map[string]any) []QuotaWindow {
-	families := []QuotaWindow{{Label: "Claude & GPT models"}, {Label: "Gemini models"}}
-	models := asMap(payload["models"])
-	for modelID, raw := range models {
-		family := -1
-		normalized := strings.ToLower(strings.ReplaceAll(modelID, "_", "-"))
-		isClaude46 := strings.HasPrefix(normalized, "claude-") && (strings.Contains(normalized, "4-6") || strings.Contains(normalized, "4.6"))
-		switch {
-		case isClaude46 || strings.HasPrefix(normalized, "gpt-"):
-			family = 0
-		case strings.HasPrefix(normalized, "gemini-3.") || strings.HasPrefix(normalized, "gemini-3-"):
-			family = 1
-		default:
+func parseAntigravityQuotaSummary(payload map[string]any) []QuotaWindow {
+	claude5h := QuotaWindow{Label: "Claude 5-hour"}
+	claudeWeekly := QuotaWindow{Label: "Claude Weekly"}
+	gemini5h := QuotaWindow{Label: "Gemini 5-hour"}
+	geminiWeekly := QuotaWindow{Label: "Gemini Weekly"}
+
+	rawGroups, _ := payload["groups"].([]any)
+	for _, rawGroup := range rawGroups {
+		group := asMap(rawGroup)
+		if group == nil {
 			continue
 		}
-		model := asMap(raw)
-		quota := asMap(firstValue(model["quotaInfo"], model["quota_info"]))
-		if quota == nil {
-			quota = model
-		}
-		remainingFraction, ok := numberValue(firstValue(quota["remainingFraction"], quota["remaining_fraction"], quota["remaining"]))
-		if !ok {
-			if parseTimeValue(firstValue(quota["resetTime"], quota["reset_time"])) == nil {
+		name := strings.ToLower(firstString(group["displayName"], group["display_name"]))
+		desc := strings.ToLower(firstString(group["description"]))
+		isClaude := strings.Contains(name, "claude") || strings.Contains(name, "gpt") || strings.Contains(desc, "claude") || strings.Contains(desc, "gpt")
+		isGemini := strings.Contains(name, "gemini") || strings.Contains(desc, "gemini")
+
+		rawBuckets, _ := group["buckets"].([]any)
+		for _, rawBucket := range rawBuckets {
+			bucket := asMap(rawBucket)
+			if bucket == nil {
 				continue
 			}
-			remainingFraction = 0
+			windowType := strings.ToLower(firstString(bucket["window"]))
+			bucketID := strings.ToLower(firstString(bucket["bucketId"], bucket["bucket_id"]))
+			is5h := windowType == "5h" || strings.Contains(bucketID, "5h")
+			isWeekly := windowType == "weekly" || strings.Contains(bucketID, "weekly")
+
+			switch {
+			case isClaude && is5h:
+				claude5h = parseBucketWindow("Claude 5-hour", bucket)
+			case isClaude && isWeekly:
+				claudeWeekly = parseBucketWindow("Claude Weekly", bucket)
+			case isGemini && is5h:
+				gemini5h = parseBucketWindow("Gemini 5-hour", bucket)
+			case isGemini && isWeekly:
+				geminiWeekly = parseBucketWindow("Gemini Weekly", bucket)
+			}
 		}
-		remaining := remainingFraction
+	}
+	return []QuotaWindow{claude5h, claudeWeekly, gemini5h, geminiWeekly}
+}
+
+func parseBucketWindow(label string, bucket map[string]any) QuotaWindow {
+	window := QuotaWindow{Label: label}
+	if bucket == nil {
+		return window
+	}
+	if fraction, ok := numberValue(firstValue(bucket["remainingFraction"], bucket["remaining_fraction"])); ok {
+		remaining := fraction
 		if remaining <= 1 {
 			remaining *= 100
 		}
 		remaining = clamp(remaining, 0, 100)
-		reset := parseTimeValue(firstValue(quota["resetTime"], quota["reset_time"]))
-		mergeFamilyQuota(&families[family], remaining, reset)
-	}
-	return families
-}
-
-func mergeFamilyQuota(window *QuotaWindow, remaining float64, reset *time.Time) {
-	if window.Remaining == nil || remaining < *window.Remaining {
 		window.Remaining = &remaining
-		window.ResetAt = reset
-		return
+	} else if parseTimeValue(firstValue(bucket["resetTime"], bucket["reset_time"])) != nil {
+		zero := 0.0
+		window.Remaining = &zero
 	}
-	if remaining == *window.Remaining && reset != nil && (window.ResetAt == nil || reset.Before(*window.ResetAt)) {
-		window.ResetAt = reset
-	}
+	window.ResetAt = parseTimeValue(firstValue(bucket["resetTime"], bucket["reset_time"]))
+	return window
 }
 
 func parseResetTime(value map[string]any, now time.Time) *time.Time {

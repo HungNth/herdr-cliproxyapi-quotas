@@ -405,14 +405,24 @@ func (m uiModel) View() string {
 		return m.configView()
 	}
 
+	versionLine := versionStatusLine(m, m.versionChecking)
 	status := ""
 	switch {
 	case m.fetching:
-		status = warningStyle.Render("Refreshing…")
-	case !m.snapshot.FetchedAt.IsZero() && m.width >= 65:
-		status = dimStyle.Render("Updated " + m.snapshot.FetchedAt.Local().Format("02/01 15:04:05"))
+		if m.width <= 0 || lipgloss.Width(versionLine)+2+len("Refreshing…") <= m.width {
+			status = warningStyle.Render("Refreshing…")
+		}
+	case !m.snapshot.FetchedAt.IsZero():
+		versionWidth := lipgloss.Width(versionLine)
+		fullStatus := "Updated " + m.snapshot.FetchedAt.Local().Format("02/01 15:04:05")
+		compactStatus := "Updated " + m.snapshot.FetchedAt.Local().Format("15:04")
+		switch {
+		case m.width <= 0 || versionWidth+2+len(fullStatus) <= m.width:
+			status = dimStyle.Render(fullStatus)
+		case versionWidth+2+len(compactStatus) <= m.width:
+			status = dimStyle.Render(compactStatus)
+		}
 	}
-	versionLine := versionStatusLine(m, m.versionChecking)
 	header := titleStyle.Render("CPA Quotas") + "\n" + versionLine
 	if status != "" {
 		header += "  " + status
@@ -614,9 +624,6 @@ func groupLabelWidth(group cpa.ProviderQuota, shorten bool, maxLen int) int {
 }
 
 func groupFitsFullLabels(group cpa.ProviderQuota, width int, now time.Time) bool {
-	if width < 55 {
-		return false
-	}
 	fullLabelWidth := groupLabelWidth(group, false, 0)
 	for _, account := range group.Accounts {
 		for _, window := range account.Windows {
@@ -671,7 +678,7 @@ func renderQuotaLine(window cpa.QuotaWindow, now time.Time, labelWidth int, barW
 	}
 
 	meta += pctStr + "  " + countdownRendered
-	if timestamp != "" && totalWidth >= 50 {
+	if timestamp != "" {
 		withTimestampLen := 4 + labelWidth + 2 + 4 + 2 + uniseg.StringWidth(resetStr) + 2 + 11
 		if withTimestampLen <= totalWidth {
 			meta += "  " + dimStyle.Render(timestamp)

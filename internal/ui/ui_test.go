@@ -394,11 +394,24 @@ func TestNarrowPanePreservesPercentageAndCountdown(t *testing.T) {
 func TestTimestampDroppedWhenWidthConstrained(t *testing.T) {
 	t.Parallel()
 
-	narrow := plainLines(t, renderFullSnapshot(45))
+	// At width 35, Codex 5-hour with timestamp (39 chars) cannot fit, so timestamp must be dropped.
+	narrow := plainLines(t, renderFullSnapshot(35))
 	for _, line := range narrow {
 		if strings.Contains(line, "5-hour") && strings.Contains(line, "20:30") {
-			t.Fatalf("at width 45: timestamp must be dropped: %q", line)
+			t.Fatalf("at width 35: timestamp must be dropped: %q", line)
 		}
+	}
+
+	// At width 45, Codex 5-hour with timestamp (39 chars) fits and must appear.
+	mid := plainLines(t, renderFullSnapshot(45))
+	foundMid := false
+	for _, line := range mid {
+		if strings.Contains(line, "5-hour") && strings.Contains(line, "20:30") {
+			foundMid = true
+		}
+	}
+	if !foundMid {
+		t.Fatal("at width 45: Codex timestamp must appear when row fits")
 	}
 
 	wide := plainLines(t, renderFullSnapshot(80))
@@ -416,22 +429,33 @@ func TestTimestampDroppedWhenWidthConstrained(t *testing.T) {
 func TestCompactLabelsUsedUnderPressure(t *testing.T) {
 	t.Parallel()
 
-	narrow := plainLines(t, renderFullSnapshot(45))
+	narrow := plainLines(t, renderFullSnapshot(32))
 	joined := strings.Join(narrow, "\n")
 	if !strings.Contains(joined, "Claude 5h") {
-		t.Fatalf("at width 45: Claude 5h compact label must be used: %q", joined)
+		t.Fatalf("at width 32: Claude 5h compact label must be used: %q", joined)
 	}
 	if strings.Contains(joined, "Claude 5-hour") {
-		t.Fatalf("at width 45: long label must be dropped: %q", joined)
+		t.Fatalf("at width 32: long label must be dropped: %q", joined)
 	}
 	if !strings.Contains(joined, "Gemini 5h") {
-		t.Fatalf("at width 45: Gemini 5h compact label must be used: %q", joined)
+		t.Fatalf("at width 32: Gemini 5h compact label must be used: %q", joined)
 	}
 
 	wide := plainLines(t, renderFullSnapshot(80))
 	joinedWide := strings.Join(wide, "\n")
 	if !strings.Contains(joinedWide, "Claude 5-hour") {
 		t.Fatalf("at width 80: full label must appear: %q", joinedWide)
+	}
+}
+
+func TestFullLabelsPreservedWhenFittingNarrowerThan55(t *testing.T) {
+	t.Parallel()
+
+	// At width 45, full labels (row width 33) fit comfortably and must not be shortened.
+	lines := plainLines(t, renderFullSnapshot(45))
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "Claude 5-hour") {
+		t.Fatalf("at width 45: full label Claude 5-hour must be preserved when it fits: %q", joined)
 	}
 }
 
@@ -547,6 +571,28 @@ func TestHeaderDropsPassiveUpdatedTimestampInNarrowWidth(t *testing.T) {
 	wide := model.View()
 	if !strings.Contains(wide, "Updated") {
 		t.Fatalf("wide header must include Updated timestamp: %q", wide)
+	}
+}
+
+func TestHeaderShowsCompactUpdatedTimestampWhenSpaceConstrained(t *testing.T) {
+	t.Parallel()
+
+	model := newUIModel(configPathForTest(t))
+	model.mode = modeQuota
+	model.hasConfig = true
+	model.snapshot = cpa.Snapshot{FetchedAt: fixedTime(), CurrentVersion: "7.2.155"}
+	model.latestVersion = "v7.2.156"
+
+	// At width 50, versionLine (32) + 2 + compact (13) = 47 <= 50, but full (22) = 56 > 50
+	model.width = 50
+	view := model.View()
+	expectedCompact := "Updated " + fixedTime().Local().Format("15:04")
+	if !strings.Contains(view, expectedCompact) {
+		t.Fatalf("at width 50: header must contain compact timestamp %q: %q", expectedCompact, view)
+	}
+	expectedFull := "Updated " + fixedTime().Local().Format("02/01 15:04:05")
+	if strings.Contains(view, expectedFull) {
+		t.Fatalf("at width 50: header must not contain full timestamp %q: %q", expectedFull, view)
 	}
 }
 

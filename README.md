@@ -108,3 +108,7 @@ All provider quota lookups are read-only requests forwarded through `api-call`. 
 - Antigravity: `Claude 5-hour`, `Claude Weekly`, `Gemini 5-hour`, and `Gemini Weekly`
 
 Empty provider groups are hidden. Disabled and unavailable accounts remain visible with status badges.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release history and version migration details.

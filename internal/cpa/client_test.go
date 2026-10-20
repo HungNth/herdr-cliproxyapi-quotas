@@ -111,6 +111,9 @@ func TestFetchSnapshotUsesOnlyReadOnlyManagementEndpoints(t *testing.T) {
 						},
 					},
 				}})
+				if call.Header["User-Agent"] != "antigravity/hub/2.23.0 darwin/arm64" {
+					recordError("unexpected antigravity User-Agent: " + call.Header["User-Agent"])
+				}
 			default:
 				recordError("unexpected upstream URL: " + call.URL)
 				writeEnvelopeStatus(t, w, http.StatusBadRequest, map[string]any{"error": "unexpected URL"})
@@ -140,6 +143,15 @@ func TestFetchSnapshotUsesOnlyReadOnlyManagementEndpoints(t *testing.T) {
 		if path != authFilesPath && path != apiCallPath && path != latestVersionPath {
 			t.Fatalf("called endpoint outside the read-only boundary: %s", path)
 		}
+	}
+	if authFilesPath != "/v8/management/credentials" {
+		t.Fatalf("authFilesPath = %q, want /v8/management/credentials", authFilesPath)
+	}
+	if apiCallPath != "/v8/management/requests/api-call" {
+		t.Fatalf("apiCallPath = %q, want /v8/management/requests/api-call", apiCallPath)
+	}
+	if latestVersionPath != "/v8/management/server/latest-version" {
+		t.Fatalf("latestVersionPath = %q, want /v8/management/server/latest-version", latestVersionPath)
 	}
 	if len(snapshot.Groups) != 3 {
 		t.Fatalf("groups = %d, want 3", len(snapshot.Groups))

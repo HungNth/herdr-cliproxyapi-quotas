@@ -80,9 +80,9 @@ herdr plugin link .
 
 The plugin only calls these CLIProxyAPI Management API endpoints:
 
-- `GET /v0/management/auth-files`
-- `GET /v0/management/latest-version`
-- `POST /v0/management/api-call`
+- `GET /v8/management/credentials`
+- `GET /v8/management/server/latest-version`
+- `POST /v8/management/requests/api-call`
 
 All provider quota lookups are read-only requests forwarded through `api-call`. The plugin does not read local token files, call providers directly, consume Codex reset credits, reset CLIProxyAPI quota state, modify accounts, or update CLIProxyAPI.
 

@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const latestVersionPath = "/v0/management/latest-version"
+const latestVersionPath = "/v8/management/server/latest-version"
 
 func parseVersionTriplet(raw string) (major int, minor int, patch int, ok bool) {
 	trimmed := raw

@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	authFilesPath = "/v0/management/auth-files"
-	apiCallPath   = "/v0/management/api-call"
+	authFilesPath = "/v8/management/credentials"
+	apiCallPath   = "/v8/management/requests/api-call"
 
 	codexUsageURL        = "https://chatgpt.com/backend-api/wham/usage"
 	codexResetCreditsURL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
@@ -327,7 +327,7 @@ func (c *Client) queryAntigravity(ctx context.Context, task queryTask) AccountQu
 	headers := map[string]string{
 		"Authorization": "Bearer $TOKEN$",
 		"Content-Type":  "application/json",
-		"User-Agent":    "antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)",
+		"User-Agent":    "antigravity/hub/2.23.0 darwin/arm64",
 	}
 	payload, err := c.callUpstream(ctx, apiCallRequest{
 		AuthIndex: authIndex,

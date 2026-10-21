@@ -170,10 +170,10 @@ func TestFetchSnapshotUsesOnlyReadOnlyManagementEndpoints(t *testing.T) {
 	if len(antigravity.Accounts[0].Windows) != 4 {
 		t.Fatalf("Antigravity windows count = %d, want 4", len(antigravity.Accounts[0].Windows))
 	}
-	assertRemaining(t, antigravity.Accounts[0].Windows[0], 40)
-	assertRemaining(t, antigravity.Accounts[0].Windows[1], 70)
-	assertRemaining(t, antigravity.Accounts[0].Windows[2], 80)
-	assertRemaining(t, antigravity.Accounts[0].Windows[3], 90)
+	assertRemaining(t, antigravity.Accounts[0].Windows[0], 80)
+	assertRemaining(t, antigravity.Accounts[0].Windows[1], 90)
+	assertRemaining(t, antigravity.Accounts[0].Windows[2], 40)
+	assertRemaining(t, antigravity.Accounts[0].Windows[3], 70)
 
 	claude := findGroup(t, snapshot, ProviderClaude)
 	if len(claude.Accounts) != 1 || claude.Accounts[0].Name != "claude@example.com" {
@@ -285,26 +285,116 @@ func TestParseAntigravityQuotaSummary(t *testing.T) {
 		t.Fatalf("got %d windows, want 4", len(windows))
 	}
 
-	// Claude 5-hour
-	if windows[0].Label != "Claude 5-hour" || windows[0].Remaining == nil || *windows[0].Remaining != 0 {
-		t.Fatalf("Claude 5-hour = %#v", windows[0])
-	}
-	if windows[0].ResetAt == nil || windows[0].ResetAt.Format(time.RFC3339) != "2026-09-16T11:38:38Z" {
-		t.Fatalf("Claude 5-hour reset = %v", windows[0].ResetAt)
-	}
-
-	// Claude Weekly
-	if windows[1].Label != "Claude Weekly" || windows[1].Remaining == nil || math.Abs(*windows[1].Remaining-25.24704) > 0.001 {
-		t.Fatalf("Claude Weekly = %#v", windows[1])
-	}
-
 	// Gemini 5-hour
-	if windows[2].Label != "Gemini 5-hour" || windows[2].Remaining == nil || math.Abs(*windows[2].Remaining-92.559963) > 0.001 {
-		t.Fatalf("Gemini 5-hour = %#v", windows[2])
+	if windows[0].Label != "Gemini 5-hour" || windows[0].Remaining == nil || math.Abs(*windows[0].Remaining-92.559963) > 0.001 {
+		t.Fatalf("Gemini 5-hour = %#v", windows[0])
 	}
 
 	// Gemini Weekly
-	if windows[3].Label != "Gemini Weekly" || windows[3].Remaining == nil || math.Abs(*windows[3].Remaining-88.56122) > 0.001 {
-		t.Fatalf("Gemini Weekly = %#v", windows[3])
+	if windows[1].Label != "Gemini Weekly" || windows[1].Remaining == nil || math.Abs(*windows[1].Remaining-88.56122) > 0.001 {
+		t.Fatalf("Gemini Weekly = %#v", windows[1])
+	}
+
+	// Claude 5-hour
+	if windows[2].Label != "Claude 5-hour" || windows[2].Remaining == nil || *windows[2].Remaining != 0 {
+		t.Fatalf("Claude 5-hour = %#v", windows[2])
+	}
+	if windows[2].ResetAt == nil || windows[2].ResetAt.Format(time.RFC3339) != "2026-09-16T11:38:38Z" {
+		t.Fatalf("Claude 5-hour reset = %v", windows[2].ResetAt)
+	}
+
+	// Claude Weekly
+	if windows[3].Label != "Claude Weekly" || windows[3].Remaining == nil || math.Abs(*windows[3].Remaining-25.24704) > 0.001 {
+		t.Fatalf("Claude Weekly = %#v", windows[3])
+	}
+}
+
+func TestParseAntigravityQuotaSummary_OmittedGroupsPreserveOrderAndPlaceholders(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		payload      map[string]any
+		wantLabels   []string
+		hasRemaining [4]bool
+	}{
+		{
+			name:         "empty payload",
+			payload:      map[string]any{},
+			wantLabels:   []string{"Gemini 5-hour", "Gemini Weekly", "Claude 5-hour", "Claude Weekly"},
+			hasRemaining: [4]bool{false, false, false, false},
+		},
+		{
+			name: "gemini only",
+			payload: map[string]any{
+				"groups": []any{
+					map[string]any{
+						"displayName": "Gemini Models",
+						"buckets": []any{
+							map[string]any{"bucketId": "gemini-5h", "window": "5h", "remainingFraction": 0.5},
+							map[string]any{"bucketId": "gemini-weekly", "window": "weekly", "remainingFraction": 0.8},
+						},
+					},
+				},
+			},
+			wantLabels:   []string{"Gemini 5-hour", "Gemini Weekly", "Claude 5-hour", "Claude Weekly"},
+			hasRemaining: [4]bool{true, true, false, false},
+		},
+		{
+			name: "claude only",
+			payload: map[string]any{
+				"groups": []any{
+					map[string]any{
+						"displayName": "Claude and GPT models",
+						"buckets": []any{
+							map[string]any{"bucketId": "3p-5h", "window": "5h", "remainingFraction": 0.3},
+							map[string]any{"bucketId": "3p-weekly", "window": "weekly", "remainingFraction": 0.6},
+						},
+					},
+				},
+			},
+			wantLabels:   []string{"Gemini 5-hour", "Gemini Weekly", "Claude 5-hour", "Claude Weekly"},
+			hasRemaining: [4]bool{false, false, true, true},
+		},
+		{
+			name: "unknown windows and unknown groups ignored",
+			payload: map[string]any{
+				"groups": []any{
+					map[string]any{
+						"displayName": "Unknown Model Group",
+						"buckets": []any{
+							map[string]any{"bucketId": "unknown-monthly", "window": "monthly", "remainingFraction": 0.99},
+						},
+					},
+					map[string]any{
+						"displayName": "Gemini Models",
+						"buckets": []any{
+							map[string]any{"bucketId": "gemini-hourly", "window": "1h", "remainingFraction": 0.1},
+							map[string]any{"bucketId": "gemini-5h", "window": "5h", "remainingFraction": 0.75},
+						},
+					},
+				},
+			},
+			wantLabels:   []string{"Gemini 5-hour", "Gemini Weekly", "Claude 5-hour", "Claude Weekly"},
+			hasRemaining: [4]bool{true, false, false, false},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			windows := parseAntigravityQuotaSummary(tc.payload)
+			if len(windows) != 4 {
+				t.Fatalf("got %d windows, want 4", len(windows))
+			}
+			for i, wantLabel := range tc.wantLabels {
+				if windows[i].Label != wantLabel {
+					t.Errorf("window[%d].Label = %q, want %q", i, windows[i].Label, wantLabel)
+				}
+				hasRem := windows[i].Remaining != nil
+				if hasRem != tc.hasRemaining[i] {
+					t.Errorf("window[%d] hasRemaining = %v, want %v", i, hasRem, tc.hasRemaining[i])
+				}
+			}
+		})
 	}
 }

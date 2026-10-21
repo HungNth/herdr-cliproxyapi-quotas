@@ -541,7 +541,7 @@ func parseAntigravityQuotaSummary(payload map[string]any) []QuotaWindow {
 			}
 		}
 	}
-	return []QuotaWindow{claude5h, claudeWeekly, gemini5h, geminiWeekly}
+	return []QuotaWindow{gemini5h, geminiWeekly, claude5h, claudeWeekly}
 }
 
 func parseBucketWindow(label string, bucket map[string]any) QuotaWindow {
